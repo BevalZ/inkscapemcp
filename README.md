@@ -67,6 +67,8 @@ workspace/
 
 ## Tools
 
+Phase 1 document and preview tools:
+
 - `create_document`
 - `add_element`
 - `apply_svg_operations`
@@ -82,6 +84,42 @@ workspace/
 - `rollback_document`
 - `archive_document`
 
+Phase 2 tools:
+
+- `import_font`
+- `path_union`
+- `path_difference`
+- `path_intersection`
+- `path_exclusion`
+- `path_combine`
+- `path_break_apart`
+- `path_simplify`
+- `run_action`
+
 Raw SVG fragments are parsed and safety-filtered before save. Dangerous elements, event handlers, remote references, local file references, and data references are rejected. Full document replacement requires an `<svg>` root with `viewBox` or both `width` and `height`.
 
 Every document write snapshots `current.svg` before replacement. Rollback also snapshots the current state before restoring history. Physical deletion is not supported; use `archive_document`.
+
+## Phase 2 Notes
+
+`import_font` copies a local `.ttf`, `.otf`, `.woff`, or `.woff2` file into `workspace/fonts/`. It does not download remote fonts, embed fonts into SVG files, or guarantee cross-machine font availability.
+
+Path geometry tools run Inkscape actions on explicit element ids in the current document. They do not use hidden GUI selection state. `autoConvertToPath` defaults to `true`; when selected text is converted, the tool returns a warning because the text may no longer be editable.
+
+`path_difference` uses an explicit `baseId` and `cutterIds`. Geometry tools support optional `resultId`; conflicts with unrelated existing ids are rejected before writing.
+
+`run_action` is allowlisted. Current actions are:
+
+- `object_to_path`
+- `selection_group`
+- `selection_ungroup`
+- `path_simplify`
+
+## Resources
+
+The server exposes artifact resources for hosts that support MCP resources:
+
+- `inksmcp://documents/{docId}/current.svg`
+- `inksmcp://documents/{docId}/preview.png`
+
+Resources are read from the configured workspace only. The server still returns file path metadata from tools for Codex CLI workflows.

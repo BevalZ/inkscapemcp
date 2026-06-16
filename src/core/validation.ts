@@ -137,6 +137,44 @@ export const archiveDocumentSchema = z.object({
   docId: docIdSchema,
 });
 
+export const importFontSchema = z.object({
+  sourcePath: z.string().min(1),
+  filename: z.string().min(1).max(120).optional(),
+});
+
+const elementIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_.:-]*$/);
+
+export const pathGeometryBaseSchema = z.object({
+  docId: docIdSchema,
+  elementIds: z.array(elementIdSchema).min(1),
+  resultId: elementIdSchema.optional(),
+  autoConvertToPath: z.boolean().default(true),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+export const pathGeometryMultiSchema = pathGeometryBaseSchema.extend({
+  elementIds: z.array(elementIdSchema).min(2),
+});
+
+export const pathDifferenceSchema = z.object({
+  docId: docIdSchema,
+  baseId: elementIdSchema,
+  cutterIds: z.array(elementIdSchema).min(1),
+  resultId: elementIdSchema.optional(),
+  autoConvertToPath: z.boolean().default(true),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+export const pathSimplifySchema = pathGeometryBaseSchema;
+
+export const runActionSchema = z.object({
+  docId: docIdSchema,
+  action: z.enum(["object_to_path", "selection_group", "selection_ungroup", "path_simplify"]),
+  elementIds: z.array(elementIdSchema).min(1),
+  resultId: elementIdSchema.optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
 export type SvgDocument = XmlDocument;
 export type SvgElement = XmlElement;
 

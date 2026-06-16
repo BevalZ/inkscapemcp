@@ -22,6 +22,11 @@ export interface InkscapeResult {
   exitCode: number;
 }
 
+export interface ActionExportOptions extends InkscapeRunOptions {
+  actions: string[];
+  outputPath: string;
+}
+
 export class InkscapeCli {
   private binaryPath?: string | null;
 
@@ -91,6 +96,11 @@ export class InkscapeCli {
     });
     child.unref();
     return { binaryPath: binary, pid: child.pid };
+  }
+
+  async runActionsToSvg(inputSvgPath: string, options: ActionExportOptions): Promise<InkscapeResult> {
+    const actionText = [...options.actions, `export-filename:${options.outputPath}`, "export-do"].join(";");
+    return this.run([inputSvgPath, `--actions=${actionText}`], options);
   }
 
   private async runExport(inputSvgPath: string, outputPath: string, options: ExportOptions): Promise<InkscapeResult> {

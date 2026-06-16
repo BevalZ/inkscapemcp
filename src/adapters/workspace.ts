@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, readdir, stat, writeFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, readdir, stat, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { InkMcpError } from "../core/errors.js";
@@ -79,6 +79,50 @@ export class Workspace {
 
   previewPath(docId: string): string {
     return this.resolveWithinWorkspace("drawings", assertSafeDocId(docId), "preview.png");
+  }
+
+  tempPath(docId: string, filename: string): string {
+    const safeName = filename.replace(/[^A-Za-z0-9_.-]+/g, "-");
+    if (!safeName) {
+      throw new InkMcpError("INVALID_INPUT", "Invalid temporary filename.", { filename });
+    }
+    return this.resolveWithinWorkspace("drawings", assertSafeDocId(docId), ".tmp", safeName);
+  }
+
+  fontPath(filename: string): string {
+    const safeName = filename.replace(/[^A-Za-z0-9_.-]+/g, "-");
+    if (!safeName || safeName === "." || safeName === "..") {
+      throw new InkMcpError("INVALID_INPUT", "Invalid font filename.", { filename });
+    }
+    return this.resolveWithinWorkspace("fonts", safeName);
+  }
+
+  async importFont(sourcePath: string, preferredName?: string): Promise<{ fontPath: string; bytes: number }> {
+    if (/^(?:https?|ftp|file):/i.test(sourcePath) || /^(?:\/\/|\\\\)/.test(sourcePath.trim())) {
+      throw new InkMcpError("INVALID_INPUT", "Remote, URI, and UNC font sources are not allowed.");
+    }
+    const absoluteSource = path.resolve(sourcePath);
+    const extension = path.extname(absoluteSource).toLowerCase();
+    if (![".ttf", ".otf", ".woff", ".woff2"].includes(extension)) {
+      throw new InkMcpError("INVALID_INPUT", "Unsupported font extension.", { extension });
+    }
+    const sourceInfo = await stat(absoluteSource).catch(() => {
+      throw new InkMcpError("INVALID_INPUT", "Font source was not found.", { sourcePath });
+    });
+    if (!sourceInfo.isFile()) {
+      throw new InkMcpError("INVALID_INPUT", "Font source must be a file.", { sourcePath });
+    }
+    await this.ensureReady();
+    const baseName = preferredName ?? path.basename(absoluteSource);
+    const target = this.fontPath(`${path.basename(baseName, path.extname(baseName))}-${timestampId()}${extension}`);
+    await copyFile(absoluteSource, target);
+    return { fontPath: target, bytes: sourceInfo.size };
+  }
+
+  async listDocuments(): Promise<string[]> {
+    await this.ensureReady();
+    const entries = await readdir(this.paths.drawingsDir, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
   }
 
   async readSvg(docId: string): Promise<string> {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,13 +11,18 @@ import {
   createDocumentSchema,
   deleteElementSchema,
   exportDocumentSchema,
+  importFontSchema,
   insertSvgFragmentSchema,
   listHistorySchema,
   openInInkscapeSchema,
+  pathDifferenceSchema,
+  pathGeometryBaseSchema,
+  pathGeometryMultiSchema,
   queryDocumentSchema,
   renderPreviewSchema,
   replaceDocumentSvgSchema,
   rollbackDocumentSchema,
+  runActionSchema,
   updateElementSchema,
 } from "./core/validation.js";
 import { toErrorPayload } from "./core/errors.js";
@@ -38,6 +43,9 @@ import {
   updateElement,
 } from "./tools/elements.js";
 import { exportDocument, openInInkscape, renderPreview } from "./tools/preview.js";
+import { importFont } from "./tools/fonts.js";
+import { runAllowedAction, runPathDifference, runPathGeometry } from "./tools/geometry.js";
+import { listCurrentSvgResources, listPreviewPngResources, readArtifactResource } from "./tools/resources.js";
 
 export function createServer() {
   const ctx = createToolContext();
@@ -190,6 +198,120 @@ export function createServer() {
       inputSchema: archiveDocumentSchema,
     },
     (input) => runTool("archive_document", () => archiveDocument(input, ctx)),
+  );
+
+  server.registerTool(
+    "import_font",
+    {
+      title: "Import local font",
+      description: "Copy a local font file into the workspace fonts directory.",
+      inputSchema: importFontSchema,
+    },
+    (input) => runTool("import_font", () => importFont(input, ctx)),
+  );
+
+  server.registerTool(
+    "path_union",
+    {
+      title: "Path union",
+      description: "Run Inkscape path-union on explicit existing element ids.",
+      inputSchema: pathGeometryMultiSchema,
+    },
+    (input) => runTool("path_union", () => runPathGeometry("path_union", input, ctx)),
+  );
+
+  server.registerTool(
+    "path_difference",
+    {
+      title: "Path difference",
+      description: "Run Inkscape path-difference with an explicit baseId and cutterIds.",
+      inputSchema: pathDifferenceSchema,
+    },
+    (input) => runTool("path_difference", () => runPathDifference(input, ctx)),
+  );
+
+  server.registerTool(
+    "path_intersection",
+    {
+      title: "Path intersection",
+      description: "Run Inkscape path-intersection on explicit existing element ids.",
+      inputSchema: pathGeometryMultiSchema,
+    },
+    (input) => runTool("path_intersection", () => runPathGeometry("path_intersection", input, ctx)),
+  );
+
+  server.registerTool(
+    "path_exclusion",
+    {
+      title: "Path exclusion",
+      description: "Run Inkscape path-exclusion on explicit existing element ids.",
+      inputSchema: pathGeometryMultiSchema,
+    },
+    (input) => runTool("path_exclusion", () => runPathGeometry("path_exclusion", input, ctx)),
+  );
+
+  server.registerTool(
+    "path_combine",
+    {
+      title: "Path combine",
+      description: "Run Inkscape path-combine on explicit existing element ids.",
+      inputSchema: pathGeometryMultiSchema,
+    },
+    (input) => runTool("path_combine", () => runPathGeometry("path_combine", input, ctx)),
+  );
+
+  server.registerTool(
+    "path_break_apart",
+    {
+      title: "Path break apart",
+      description: "Run Inkscape path-break-apart on explicit existing element ids.",
+      inputSchema: pathGeometryBaseSchema,
+    },
+    (input) => runTool("path_break_apart", () => runPathGeometry("path_break_apart", input, ctx)),
+  );
+
+  server.registerTool(
+    "path_simplify",
+    {
+      title: "Path simplify",
+      description: "Run Inkscape path-simplify on explicit existing element ids.",
+      inputSchema: pathGeometryBaseSchema,
+    },
+    (input) => runTool("path_simplify", () => runPathGeometry("path_simplify", input, ctx)),
+  );
+
+  server.registerTool(
+    "run_action",
+    {
+      title: "Run allowlisted Inkscape action",
+      description: "Run a small allowlist of Inkscape actions on explicit existing element ids.",
+      inputSchema: runActionSchema,
+    },
+    (input) => runTool("run_action", () => runAllowedAction(input, ctx)),
+  );
+
+  server.registerResource(
+    "document-current-svg",
+    new ResourceTemplate("inksmcp://documents/{docId}/current.svg", {
+      list: () => listCurrentSvgResources(ctx.workspace),
+    }),
+    {
+      title: "Current SVG document",
+      mimeType: "image/svg+xml",
+    },
+    (uri) => readArtifactResource(uri, ctx.workspace),
+  );
+
+  server.registerResource(
+    "document-preview-png",
+    new ResourceTemplate("inksmcp://documents/{docId}/preview.png", {
+      list: () => listPreviewPngResources(ctx.workspace),
+    }),
+    {
+      title: "Rendered PNG preview",
+      mimeType: "image/png",
+    },
+    (uri) => readArtifactResource(uri, ctx.workspace),
   );
 
   return server;
