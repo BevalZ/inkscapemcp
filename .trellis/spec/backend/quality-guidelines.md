@@ -147,6 +147,89 @@ new DOMParser({
 
 Do not set `tsconfig.json` `rootDir` to `.` for runtime builds in this project. It emits `dist/src/server.js` and breaks the package `bin` contract. Runtime builds should use `rootDir: "src"` so `node dist/server.js` is the stable MCP entry point.
 
+## Scenario: Phase 2 Geometry, Fonts, And Resources Contract
+
+### 1. Scope / Trigger
+
+- Trigger: Phase 2 adds new MCP tools, Inkscape action execution, workspace font imports, and MCP resources.
+- Scope: local stdio MCP only; SVG remains the source of truth.
+- Out of scope: HTTP, prompts, persistent Inkscape shell, remote downloads, font embedding, arbitrary actions, and cross-document operations.
+
+### 2. Signatures
+
+- New tools:
+  - `import_font({ sourcePath, filename? })`
+  - `path_union({ docId, elementIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `path_difference({ docId, baseId, cutterIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `path_intersection({ docId, elementIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `path_exclusion({ docId, elementIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `path_combine({ docId, elementIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `path_break_apart({ docId, elementIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `path_simplify({ docId, elementIds, resultId?, autoConvertToPath?, timeoutMs? })`
+  - `run_action({ docId, action, elementIds, resultId?, timeoutMs? })`
+- New resources:
+  - `inksmcp://documents/{docId}/current.svg`
+  - `inksmcp://documents/{docId}/preview.png`
+
+### 3. Contracts
+
+- `import_font` copies local `.ttf`, `.otf`, `.woff`, or `.woff2` files into `workspace/fonts/`.
+- `import_font` returns `fontPath`, byte count, and a warning that fonts are not embedded.
+- Geometry tools execute Inkscape against workspace temporary files and only replace `current.svg` after the exported SVG parses and passes safety validation.
+- Geometry tools must select explicit element ids through action strings such as `select-by-id:id1,id2`; they must not depend on GUI selection state.
+- `autoConvertToPath` defaults to `true`.
+- Text conversion returns a `TEXT_CONVERTED_TO_PATH` warning.
+- `resultId` must not conflict with unrelated existing ids.
+- `run_action` is allowlisted. Current allowed actions are `object_to_path`, `selection_group`, `selection_ungroup`, and `path_simplify`.
+
+### 4. Validation & Error Matrix
+
+- Remote, URI, or UNC font source -> `INVALID_INPUT`.
+- Unsupported font extension -> `INVALID_INPUT`.
+- Missing selected geometry id -> `INVALID_INPUT`.
+- `resultId` conflicts with an unrelated existing id -> `ID_CONFLICT`.
+- Missing Inkscape binary -> `INKSCAPE_UNAVAILABLE`.
+- Inkscape timeout -> `INKSCAPE_TIMEOUT`.
+- Inkscape geometry/action failure -> `INKSCAPE_FAILED`.
+- Unsupported resource URI -> resource read error; never resolve arbitrary filesystem paths.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `path_union` on two existing rectangles with `resultId: "merged"` returns `resultIds: ["merged"]` and a history snapshot.
+- Base: Inkscape is unavailable; the server still starts and Phase 2 Inkscape-dependent tools return `INKSCAPE_UNAVAILABLE`.
+- Bad: `run_action` receives an action outside the enum; reject through Zod/tool validation rather than forwarding to Inkscape.
+
+### 6. Tests Required
+
+- Font import copies a local file and rejects remote/URI/UNC sources.
+- Geometry helpers reject missing ids and `resultId` conflicts.
+- Geometry finalization ignores Inkscape metadata nodes such as `defs` and `sodipodi:namedview`.
+- Inkscape integration runs at least one path geometry operation when the binary is available.
+- Resource tests list/read current SVG and preview PNG resources.
+- MCP stdio smoke verifies the Phase 2 tool count and resource read behavior.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Arbitrary action forwarding is forbidden.
+await inkscape.runActionsToSvg(svgPath, { actions: [userInput], outputPath });
+```
+
+#### Correct
+
+```typescript
+const allowedActionMap = {
+  object_to_path: "object-to-path",
+  selection_group: "selection-group",
+  selection_ungroup: "selection-ungroup",
+  path_simplify: "path-simplify",
+} as const;
+```
+
+Only values from the allowlist may reach Inkscape. Geometry-specific tools should call fixed Inkscape actions such as `path-union` and `path-difference` rather than accepting action strings from callers.
+
 ## Code Review Checklist
 
 - Does every tool have a Zod input schema?
