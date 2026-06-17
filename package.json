@@ -4,12 +4,17 @@
   "description": "Local MCP server for AI-assisted Inkscape SVG workflows.",
   "type": "module",
   "bin": {
-    "inksmcp": "./dist/server.js"
+    "inksmcp": "./dist/server.js",
+    "inksmcp-hot": "./dist/hot-server.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "start": "node dist/server.js",
+    "start:hot": "node dist/hot-server.js",
     "dev": "tsx src/server.ts",
+    "dev:hot": "npm run build && node dist/hot-server.js",
+    "install:inkscape-extension": "node scripts/install-inkscape-extension.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -28,4 +33,3 @@
     "node": ">=20"
   }
 }
-

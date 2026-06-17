@@ -16,7 +16,7 @@ import {
   runActionSchema,
 } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
-import type { ToolContext } from "./context.js";
+import { tryAutoRefreshInInkscape, withGuiRefreshResult, type ToolContext } from "./context.js";
 
 type GeometryInput = z.infer<typeof pathGeometryBaseSchema>;
 type GeometryMultiInput = z.infer<typeof pathGeometryMultiSchema>;
@@ -148,7 +148,8 @@ async function applyInkscapeGeometry(
     status: "ok",
   });
 
-  return {
+  const refresh = await tryAutoRefreshInInkscape(ctx, write.paths);
+  return withGuiRefreshResult({
     ok: true,
     docId,
     operation,
@@ -157,7 +158,7 @@ async function applyInkscapeGeometry(
     currentSvgPath: write.paths.currentSvg,
     warnings: write.result.warnings,
     inkscape: write.result.inkscape,
-  };
+  }, refresh);
 }
 
 function selectActions(elementIds: string[]): string[] {

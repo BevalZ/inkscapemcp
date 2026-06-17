@@ -99,7 +99,7 @@ Inkscape 1.4.3 (0d15f75, 2025-12-25)
 - `render_preview` returns PNG content when supported by the host and always returns file path metadata.
 - Codex CLI validation treats PNG file creation and correct path metadata as the hard requirement; inline image display is optional.
 - Inkscape GUI can be opened through `open_in_inkscape`, but the core loop does not depend on GUI state.
-- Automatic Inkscape GUI synchronization is out of scope for the MVP.
+- Automatic Inkscape GUI synchronization prefers direct active-window attribute sync for existing-object attribute updates. Structural changes remain limited to best-effort active-window companion extension refresh after successful workspace writes.
 - MVP export formats are `svg`, `png`, and `pdf`.
 - Export-time text-to-path is supported as an option for visual consistency.
 - Editing keeps text as editable `text` elements.
@@ -601,7 +601,9 @@ Verification:
 
 Deliver:
 
-- best-effort window refresh or active-window action support
+- best-effort active-window action support that avoids unstable `file-rebase` by default
+- direct active-window attribute sync for existing-object attribute updates through `object-set-attribute`
+- optional Inkscape companion extension that pulls the workspace SVG into the current window without launching another GUI window, and can be triggered automatically by MCP write tools
 - optional persistent `inkscape --shell` process
 - improved process recovery and health checks
 
@@ -609,7 +611,8 @@ Verification:
 
 - open a document in Inkscape
 - change SVG through MCP
-- confirm the user can refresh or see updated output through the GUI workflow
+- confirm existing-object attribute changes become visible in the already-open Inkscape window without a reload or extra window
+- confirm the user can refresh or see structural changes through the GUI workflow, preferably through the companion extension instead of unstable `file-rebase`
 - confirm persistent process failures recover cleanly
 
 ### Phase 4: Higher-Level Drawing Features

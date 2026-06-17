@@ -1,6 +1,6 @@
 import * as z from "zod/v4";
 
-import { exportDocumentSchema, openInInkscapeSchema, renderPreviewSchema } from "../core/validation.js";
+import { exportDocumentSchema, openInInkscapeSchema, refreshInInkscapeSchema, renderPreviewSchema } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import { jsonResult, type ToolContext } from "./context.js";
 import { normalizeExportFilename, readPngContent } from "./document.js";
@@ -82,7 +82,102 @@ export async function openInInkscape(input: z.infer<typeof openInInkscapeSchema>
     warnings: [
       {
         code: "GUI_BEST_EFFORT",
-        message: "GUI opening is best-effort; file-based SVG workflow remains authoritative.",
+        message:
+          "GUI opening is best-effort and may open another window. The workspace SVG remains authoritative; on Windows, active-window automation is disabled by default because it can target the wrong document or crash.",
+      },
+    ],
+  };
+}
+
+export async function refreshInInkscape(input: z.infer<typeof refreshInInkscapeSchema>, ctx: ToolContext) {
+  const paths = ctx.workspace.documentPaths(input.docId);
+  await ctx.workspace.readSvg(input.docId);
+  if (input.useCompanionExtension !== false && !input.allowUnstableRebase) {
+    try {
+      const refreshed = await ctx.inkscape.refreshActiveWindowWithCompanionExtension({
+        docId: input.docId,
+        workspaceRoot: ctx.workspace.paths.root,
+        timeoutMs: input.timeoutMs,
+      });
+      await appendOperationLog(paths, {
+        level: "info",
+        docId: input.docId,
+        toolName: "refresh_in_inkscape",
+        inputSummary: { method: "companion-extension", timeoutMs: input.timeoutMs },
+        status: "ok",
+      });
+      return {
+        ok: true,
+        docId: input.docId,
+        currentSvgPath: paths.currentSvg,
+        refreshed: true,
+        method: "companion_extension",
+        inkscape: { binaryPath: refreshed.binaryPath, exitCode: refreshed.exitCode },
+        ...(refreshed.redraw ? { redraw: refreshed.redraw } : {}),
+      };
+    } catch (error) {
+      await appendOperationLog(paths, {
+        level: "warn",
+        docId: input.docId,
+        toolName: "refresh_in_inkscape",
+        inputSummary: { method: "companion-extension", timeoutMs: input.timeoutMs },
+        status: "ok",
+      });
+      return {
+        ok: true,
+        docId: input.docId,
+        currentSvgPath: paths.currentSvg,
+        refreshed: false,
+        method: "companion_extension",
+        warnings: [
+          {
+            code: "INKSCAPE_ACTIVE_WINDOW_REFRESH_DISABLED",
+            message:
+              "Inkscape active-window refresh was not run. The workspace SVG remains authoritative; reopen current.svg in Inkscape or opt into unsafe active-window experiments only for manual diagnosis.",
+            details: {
+              cause: error instanceof Error ? error.message : String(error),
+            },
+          },
+        ],
+      };
+    }
+  }
+
+  if (!input.allowUnstableRebase) {
+    return {
+      ok: true,
+      docId: input.docId,
+      currentSvgPath: paths.currentSvg,
+      refreshed: false,
+      warnings: [
+        {
+          code: "UNSTABLE_REBASE_DISABLED",
+          message:
+            "Inkscape active-window file-rebase is disabled by default because it can crash Inkscape 1.4.x on Windows. The workspace SVG remains authoritative.",
+        },
+      ],
+    };
+  }
+
+  const refreshed = await ctx.inkscape.refreshActiveWindow(paths.currentSvg, { timeoutMs: input.timeoutMs });
+  await appendOperationLog(paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "refresh_in_inkscape",
+    inputSummary: { timeoutMs: input.timeoutMs, allowUnstableRebase: input.allowUnstableRebase },
+    status: "ok",
+  });
+  return {
+    ok: true,
+    docId: input.docId,
+    currentSvgPath: paths.currentSvg,
+    refreshed: true,
+    inkscape: { binaryPath: refreshed.binaryPath, exitCode: refreshed.exitCode },
+    warnings: [
+      {
+        code: "UNSTABLE_REBASE",
+        message:
+          "Active-window file-rebase is an unstable best-effort path and may crash some Inkscape versions on Windows. The workspace SVG remains authoritative.",
       },
     ],
   };

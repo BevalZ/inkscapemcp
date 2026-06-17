@@ -28,6 +28,7 @@ export const docIdSchema = z.string().refine((value) => {
 
 export const attributeValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 export const attributesSchema = z.record(z.string(), attributeValueSchema).default({});
+const elementIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_.:-]*$/);
 
 export const createDocumentSchema = z.object({
   docId: docIdSchema.optional(),
@@ -52,6 +53,96 @@ export const updateElementSchema = z.object({
   setAttributes: attributesSchema,
   removeAttributes: z.array(z.string()).default([]),
   text: z.string().optional(),
+});
+
+export const nudgePathElementSchema = z.object({
+  docId: docIdSchema,
+  elementId: elementIdSchema,
+  dx: z.number().optional(),
+  dy: z.number().optional(),
+  dxMode: z.enum(["half_width_left", "half_width_right"]).optional(),
+  responseMode: z.enum(["full", "compact"]).default("compact"),
+});
+
+const pathSegmentSchema = z.discriminatedUnion("cmd", [
+  z.object({ cmd: z.literal("M"), x: z.number().finite(), y: z.number().finite() }),
+  z.object({ cmd: z.literal("L"), x: z.number().finite(), y: z.number().finite() }),
+  z.object({
+    cmd: z.literal("C"),
+    x1: z.number().finite(),
+    y1: z.number().finite(),
+    x2: z.number().finite(),
+    y2: z.number().finite(),
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }),
+  z.object({
+    cmd: z.literal("Q"),
+    x1: z.number().finite(),
+    y1: z.number().finite(),
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }),
+  z.object({ cmd: z.literal("Z") }),
+]);
+
+const pathDataSourceSchema = {
+  d: z.string().min(1).optional(),
+  segments: z.array(pathSegmentSchema).min(1).optional(),
+};
+
+function exactlyOnePathDataSource(input: { d?: string; segments?: unknown[] }) {
+  return (input.d === undefined) !== (input.segments === undefined);
+}
+
+export const drawPathSchema = z.object({
+  docId: docIdSchema,
+  parentId: elementIdSchema.optional(),
+  elementId: elementIdSchema.optional(),
+  attributes: attributesSchema,
+  ...pathDataSourceSchema,
+}).refine(exactlyOnePathDataSource, "Provide exactly one path source: d or segments");
+
+export const replacePathDataSchema = z.object({
+  docId: docIdSchema,
+  elementId: elementIdSchema,
+  ...pathDataSourceSchema,
+}).refine(exactlyOnePathDataSource, "Provide exactly one path source: d or segments");
+
+export const appendPathSegmentSchema = z.object({
+  docId: docIdSchema,
+  elementId: elementIdSchema,
+  ...pathDataSourceSchema,
+}).refine(exactlyOnePathDataSource, "Provide exactly one path source: d or segments");
+
+const pathNodeEditSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("move_point"),
+    segmentIndex: z.number().int().nonnegative(),
+    point: z.enum(["end", "c1", "c2"]),
+    dx: z.number().finite().default(0),
+    dy: z.number().finite().default(0),
+  }),
+  z.object({
+    type: z.literal("insert_segment"),
+    index: z.number().int().nonnegative(),
+    segment: pathSegmentSchema,
+  }),
+  z.object({
+    type: z.literal("delete_segment"),
+    segmentIndex: z.number().int().nonnegative(),
+  }),
+]);
+
+export const editPathNodesSchema = z.object({
+  docId: docIdSchema,
+  elementId: elementIdSchema,
+  edits: z.array(pathNodeEditSchema).min(1),
+});
+
+export const queryPathNodesSchema = z.object({
+  docId: docIdSchema,
+  elementId: elementIdSchema,
 });
 
 export const deleteElementSchema = z.object({
@@ -95,6 +186,29 @@ export const insertSvgFragmentSchema = z.object({
 export const replaceDocumentSvgSchema = z.object({
   docId: docIdSchema,
   svg: z.string().min(1),
+  confirmFullDocumentReplacement: z.boolean().default(false),
+});
+
+const editableAttributeNameSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[A-Za-z_][A-Za-z0-9_.:-]*$/)
+  .refine((value) => value !== "id", "id cannot be changed by value replacement");
+
+export const replaceAttributeValuesSchema = z.object({
+  docId: docIdSchema,
+  replacements: z
+    .array(
+      z.object({
+        from: z.string().min(1),
+        to: z.string(),
+        attributeNames: z.array(editableAttributeNameSchema).min(1).optional(),
+        styleProperties: z.array(editableAttributeNameSchema).min(1).optional(),
+      }),
+    )
+    .min(1),
+  scopeElementIds: z.array(elementIdSchema).min(1).optional(),
 });
 
 export const queryDocumentSchema = z.object({
@@ -124,6 +238,13 @@ export const openInInkscapeSchema = z.object({
   docId: docIdSchema,
 });
 
+export const refreshInInkscapeSchema = z.object({
+  docId: docIdSchema,
+  allowUnstableRebase: z.boolean().default(false),
+  useCompanionExtension: z.boolean().default(true),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
 export const listHistorySchema = z.object({
   docId: docIdSchema,
 });
@@ -141,8 +262,6 @@ export const importFontSchema = z.object({
   sourcePath: z.string().min(1),
   filename: z.string().min(1).max(120).optional(),
 });
-
-const elementIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_.:-]*$/);
 
 export const pathGeometryBaseSchema = z.object({
   docId: docIdSchema,

@@ -6,21 +6,29 @@ import { fileURLToPath } from "node:url";
 
 import {
   addElementSchema,
+  appendPathSegmentSchema,
   applySvgOperationsSchema,
   archiveDocumentSchema,
   createDocumentSchema,
   deleteElementSchema,
+  drawPathSchema,
+  editPathNodesSchema,
   exportDocumentSchema,
   importFontSchema,
   insertSvgFragmentSchema,
   listHistorySchema,
+  nudgePathElementSchema,
   openInInkscapeSchema,
   pathDifferenceSchema,
   pathGeometryBaseSchema,
   pathGeometryMultiSchema,
+  queryPathNodesSchema,
   queryDocumentSchema,
+  refreshInInkscapeSchema,
   renderPreviewSchema,
+  replaceAttributeValuesSchema,
   replaceDocumentSvgSchema,
+  replacePathDataSchema,
   rollbackDocumentSchema,
   runActionSchema,
   updateElementSchema,
@@ -37,12 +45,19 @@ import {
 } from "./tools/document.js";
 import {
   addElement,
+  appendPathSegment,
   applySvgOperations,
   deleteElement,
+  drawPath,
+  editPathNodes,
   insertSvgFragment,
+  nudgePathElement,
+  queryPathNodes,
+  replaceAttributeValues,
+  replacePathData,
   updateElement,
 } from "./tools/elements.js";
-import { exportDocument, openInInkscape, renderPreview } from "./tools/preview.js";
+import { exportDocument, openInInkscape, refreshInInkscape, renderPreview } from "./tools/preview.js";
 import { importFont } from "./tools/fonts.js";
 import { runAllowedAction, runPathDifference, runPathGeometry } from "./tools/geometry.js";
 import { listCurrentSvgResources, listPreviewPngResources, readArtifactResource } from "./tools/resources.js";
@@ -68,7 +83,7 @@ export function createServer() {
     "add_element",
     {
       title: "Add SVG element",
-      description: "Add one basic SVG element to a document.",
+      description: "Add one basic SVG element to the existing document without replacing the SVG object tree.",
       inputSchema: addElementSchema,
     },
     (input) => runTool("add_element", () => addElement(input, ctx)),
@@ -78,7 +93,8 @@ export function createServer() {
     "apply_svg_operations",
     {
       title: "Apply SVG operations",
-      description: "Apply an atomic batch of controlled SVG operations.",
+      description:
+        "Apply an atomic batch of controlled in-place SVG operations. Prefer this for normal edits to existing drawings.",
       inputSchema: applySvgOperationsSchema,
     },
     (input) => runTool("apply_svg_operations", () => applySvgOperations(input, ctx)),
@@ -88,10 +104,74 @@ export function createServer() {
     "update_element",
     {
       title: "Update SVG element",
-      description: "Update attributes or text for an existing element id.",
+      description: "Update attributes or text for an existing element id without rebuilding the document.",
       inputSchema: updateElementSchema,
     },
     (input) => runTool("update_element", () => updateElement(input, ctx)),
+  );
+
+  server.registerTool(
+    "nudge_path_element",
+    {
+      title: "Nudge SVG path element",
+      description:
+        "Move one existing path by dx/dy or half its width in one call. Use this for quick repeated path nudges with compact output.",
+      inputSchema: nudgePathElementSchema,
+    },
+    (input) => runTool("nudge_path_element", () => nudgePathElement(input, ctx)),
+  );
+
+  server.registerTool(
+    "draw_path",
+    {
+      title: "Draw SVG path",
+      description:
+        "Create a new path from raw SVG path data or structured path segments without replacing the document.",
+      inputSchema: drawPathSchema,
+    },
+    (input) => runTool("draw_path", () => drawPath(input, ctx)),
+  );
+
+  server.registerTool(
+    "replace_path_data",
+    {
+      title: "Replace path data",
+      description: "Replace the d attribute of an existing path from raw SVG path data or structured path segments.",
+      inputSchema: replacePathDataSchema,
+    },
+    (input) => runTool("replace_path_data", () => replacePathData(input, ctx)),
+  );
+
+  server.registerTool(
+    "append_path_segment",
+    {
+      title: "Append path segment",
+      description: "Append raw SVG path data or structured path segments to an existing path's d attribute.",
+      inputSchema: appendPathSegmentSchema,
+    },
+    (input) => runTool("append_path_segment", () => appendPathSegment(input, ctx)),
+  );
+
+  server.registerTool(
+    "edit_path_nodes",
+    {
+      title: "Edit path nodes",
+      description:
+        "Move, insert, or delete M/L/C/Q/Z path segments on an existing path without replacing the document.",
+      inputSchema: editPathNodesSchema,
+    },
+    (input) => runTool("edit_path_nodes", () => editPathNodes(input, ctx)),
+  );
+
+  server.registerTool(
+    "query_path_nodes",
+    {
+      title: "Query path nodes",
+      description:
+        "Return editable M/L/C/Q/Z path segment indexes, raw points, and absolute points for precise node edits.",
+      inputSchema: queryPathNodesSchema,
+    },
+    (input) => runTool("query_path_nodes", () => queryPathNodes(input, ctx)),
   );
 
   server.registerTool(
@@ -108,17 +188,29 @@ export function createServer() {
     "insert_svg_fragment",
     {
       title: "Insert SVG fragment",
-      description: "Insert a safe raw SVG fragment into the document root or explicit parent id.",
+      description: "Insert a safe raw SVG fragment into the existing document root or explicit parent id.",
       inputSchema: insertSvgFragmentSchema,
     },
     (input) => runTool("insert_svg_fragment", () => insertSvgFragment(input, ctx)),
   );
 
   server.registerTool(
+    "replace_attribute_values",
+    {
+      title: "Replace attribute values in-place",
+      description:
+        "Replace exact attribute/style values on existing SVG elements while preserving geometry, ids, ordering, and the object tree. Use this for color/style/attribute changes instead of replace_document_svg.",
+      inputSchema: replaceAttributeValuesSchema,
+    },
+    (input) => runTool("replace_attribute_values", () => replaceAttributeValues(input, ctx)),
+  );
+
+  server.registerTool(
     "replace_document_svg",
     {
-      title: "Replace SVG document",
-      description: "Replace the full SVG document after safety checks and snapshot creation.",
+      title: "Replace SVG document (full redraw)",
+      description:
+        "Destructive full-document replacement. Requires confirmFullDocumentReplacement=true and should only be used when the user explicitly asks to redraw/replace the whole SVG. Normal edits must use object-level tools.",
       inputSchema: replaceDocumentSvgSchema,
     },
     (input) => runTool("replace_document_svg", () => replaceDocumentSvg(input, ctx)),
@@ -164,10 +256,22 @@ export function createServer() {
     "open_in_inkscape",
     {
       title: "Open in Inkscape",
-      description: "Open the workspace SVG in the Inkscape GUI as a best-effort workflow.",
+      description:
+        "Open the workspace SVG in the Inkscape GUI as a best-effort workflow. This may open a new window; use refresh_in_inkscape after in-place edits to try updating the active window.",
       inputSchema: openInInkscapeSchema,
     },
     (input) => runTool("open_in_inkscape", () => openInInkscape(input, ctx)),
+  );
+
+  server.registerTool(
+    "refresh_in_inkscape",
+    {
+      title: "Refresh active Inkscape window",
+      description:
+        "Refresh the active Inkscape window through the installed InkSMCP companion extension by default. This avoids unstable file-rebase actions that can crash Inkscape on Windows; set allowUnstableRebase=true only for manual experiments.",
+      inputSchema: refreshInInkscapeSchema,
+    },
+    (input) => runTool("refresh_in_inkscape", () => refreshInInkscape(input, ctx)),
   );
 
   server.registerTool(

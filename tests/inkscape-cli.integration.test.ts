@@ -63,6 +63,7 @@ describe("Inkscape CLI integration", () => {
     process.env.INKSMCP_WORKSPACE = root;
     try {
       const ctx = createToolContext();
+      ctx.autoRefresh = { enabled: false };
       await createDocument({ docId: "geom-doc", title: "Geometry", width: 100, height: 100, unit: "px" }, ctx);
       await addElement(
         {

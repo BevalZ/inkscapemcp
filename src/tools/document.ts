@@ -3,6 +3,7 @@ import path from "node:path";
 import * as z from "zod/v4";
 
 import { timestampId } from "../adapters/workspace.js";
+import { InkMcpError } from "../core/errors.js";
 import { createDocId } from "../core/ids.js";
 import {
   createSvgDocument,
@@ -22,7 +23,7 @@ import {
   rollbackDocumentSchema,
 } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
-import type { ToolContext } from "./context.js";
+import { tryAutoRefreshInInkscape, withGuiRefreshResult, type ToolContext } from "./context.js";
 
 export async function createDocument(input: z.infer<typeof createDocumentSchema>, ctx: ToolContext) {
   const title = input.title ?? "Untitled SVG";
@@ -50,6 +51,14 @@ export async function createDocument(input: z.infer<typeof createDocumentSchema>
 }
 
 export async function replaceDocumentSvg(input: z.infer<typeof replaceDocumentSvgSchema>, ctx: ToolContext) {
+  if (!input.confirmFullDocumentReplacement) {
+    throw new InkMcpError(
+      "INVALID_INPUT",
+      "replace_document_svg replaces the whole SVG object tree. Use object-level tools for normal edits, or set confirmFullDocumentReplacement=true for an intentional redraw.",
+      { requiredFlag: "confirmFullDocumentReplacement" },
+    );
+  }
+
   const parsed = parseFullSvg(input.svg);
   const serialized = serializeSvg(parsed);
   const write = await ctx.workspace.writeSvgWithSnapshot(input.docId, "replace_document_svg", () => ({
@@ -65,11 +74,20 @@ export async function replaceDocumentSvg(input: z.infer<typeof replaceDocumentSv
     snapshotPath: write.snapshotPath,
     status: "ok",
   });
-  return {
+  const refresh = await tryAutoRefreshInInkscape(ctx, write.paths);
+  return withGuiRefreshResult({
     ok: true,
     snapshotPath: write.snapshotPath,
     document: summarizeDocument(parsed, write.paths.currentSvg, input.docId, metadata.title),
-  };
+    editMode: "full_document_replacement",
+    warnings: [
+      {
+        code: "FULL_DOCUMENT_REPLACEMENT",
+        message:
+          "The entire SVG object tree was replaced. Prefer update_element, apply_svg_operations, insert_svg_fragment, or replace_attribute_values for normal edits.",
+      },
+    ],
+  }, refresh);
 }
 
 export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, ctx: ToolContext) {
@@ -114,13 +132,14 @@ export async function rollbackDocument(input: z.infer<typeof rollbackDocumentSch
     snapshotPath: result.snapshotPath,
     status: "ok",
   });
-  return {
+  const refresh = await tryAutoRefreshInInkscape(ctx, result.paths);
+  return withGuiRefreshResult({
     ok: true,
     docId: input.docId,
     snapshotPath: result.snapshotPath,
     restoredPath: result.restoredPath,
     currentSvgPath: result.paths.currentSvg,
-  };
+  }, refresh);
 }
 
 export async function archiveDocument(input: z.infer<typeof archiveDocumentSchema>, ctx: ToolContext) {

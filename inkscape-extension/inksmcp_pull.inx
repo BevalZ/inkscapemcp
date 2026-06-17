@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+    <name>Pull Workspace Document</name>
+    <id>dev.hydens.inksmcp.pull_workspace_document</id>
+    <param name="tab" type="notebook">
+        <page name="Options" gui-text="Options">
+            <param name="doc_id" type="string" gui-text="Document id"></param>
+            <param name="workspace_root" type="string" gui-text="Workspace root override"></param>
+        </page>
+        <page name="Help" gui-text="Help">
+            <label xml:space="preserve">Pulls workspace/drawings/&lt;Document id&gt;/current.svg into this Inkscape window.
+
+Leave Workspace root override empty to use INKSMCP_WORKSPACE or the config file written by the installer.
+
+If Document id is empty, the extension tries to infer it from the current document path when this window was opened from an InkSMCP current.svg file.</label>
+        </page>
+    </param>
+    <effect>
+        <object-type>all</object-type>
+        <effects-menu>
+            <submenu name="InkSMCP"/>
+        </effects-menu>
+    </effect>
+    <script>
+        <command location="inx" interpreter="python">inksmcp_pull.py</command>
+    </script>
+</inkscape-extension>

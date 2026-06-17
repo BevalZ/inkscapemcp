@@ -1,4 +1,4 @@
-import { access, copyFile, readFile, stat } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -20,12 +20,37 @@ export interface InkscapeResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  redraw?: {
+    attempted: boolean;
+    method: "win32_window_refresh";
+    refreshed: boolean;
+    details?: Record<string, unknown>;
+  };
+}
+
+export interface CompanionRefreshOptions extends InkscapeRunOptions {
+  docId: string;
+  workspaceRoot: string;
+}
+
+export interface DirectAttributeUpdate {
+  elementId: string;
+  attributeName: string;
+  value: string;
+}
+
+export interface DirectAttributeSyncOptions extends InkscapeRunOptions {
+  updates: DirectAttributeUpdate[];
 }
 
 export interface ActionExportOptions extends InkscapeRunOptions {
   actions: string[];
   outputPath: string;
 }
+
+export const companionRefreshAction = "dev.hydens.inksmcp.pull-workspace-document.noprefs";
+export const unsafeActiveWindowRefreshEnv = "INKSMCP_ENABLE_UNSAFE_ACTIVE_WINDOW_REFRESH";
+const companionConfigFile = "inksmcp-extension.json";
 
 export class InkscapeCli {
   private binaryPath?: string | null;
@@ -98,6 +123,34 @@ export class InkscapeCli {
     return { binaryPath: binary, pid: child.pid };
   }
 
+  async refreshActiveWindow(inputSvgPath: string, options: InkscapeRunOptions = {}): Promise<InkscapeResult> {
+    await stat(inputSvgPath);
+    return this.run(["--active-window", `--actions=file-rebase:${inputSvgPath}`], options);
+  }
+
+  async syncActiveWindowAttributes(options: DirectAttributeSyncOptions): Promise<InkscapeResult> {
+    if (options.updates.length === 0) {
+      const binary = await this.requireBinary();
+      return { binaryPath: binary, stdout: "", stderr: "", exitCode: 0 };
+    }
+    return this.run(["--active-window", `--actions=${buildActiveWindowAttributeSyncActions(options.updates)}`], options);
+  }
+
+  async refreshActiveWindowWithCompanionExtension(options: CompanionRefreshOptions): Promise<InkscapeResult> {
+    await this.writeCompanionConfig({
+      workspaceRoot: options.workspaceRoot,
+      activeDocId: options.docId,
+    });
+    const result = await this.run([`--actions=active-window-start;${companionRefreshAction};active-window-end`], options);
+    if (process.platform !== "win32") {
+      return result;
+    }
+    return {
+      ...result,
+      redraw: await this.tryWindowsGuiRefresh(options.timeoutMs),
+    };
+  }
+
   async runActionsToSvg(inputSvgPath: string, options: ActionExportOptions): Promise<InkscapeResult> {
     const actionText = [...options.actions, `export-filename:${options.outputPath}`, "export-do"].join(";");
     return this.run([inputSvgPath, `--actions=${actionText}`], options);
@@ -115,7 +168,10 @@ export class InkscapeCli {
   private async run(args: string[], options: InkscapeRunOptions = {}): Promise<InkscapeResult> {
     const binary = await this.requireBinary();
     const timeout = this.resolveTimeout(options.timeoutMs);
+    return this.runProcess(binary, args, timeout);
+  }
 
+  private async runProcess(binary: string, args: string[], timeoutMs: number): Promise<InkscapeResult> {
     return new Promise((resolve, reject) => {
       const child = spawn(binary, args, {
         windowsHide: true,
@@ -129,8 +185,8 @@ export class InkscapeCli {
         if (settled) return;
         settled = true;
         child.kill();
-        reject(new InkMcpError("INKSCAPE_TIMEOUT", "Inkscape command timed out.", { timeoutMs: timeout }));
-      }, timeout);
+        reject(new InkMcpError("INKSCAPE_TIMEOUT", "Inkscape command timed out.", { timeoutMs }));
+      }, timeoutMs);
 
       child.stdout?.on("data", (chunk: Buffer) => {
         stdout += chunk.toString("utf8");
@@ -181,6 +237,108 @@ export class InkscapeCli {
 
     return [...new Set(candidates.map((candidate) => path.resolve(candidate)))];
   }
+
+  private async writeCompanionConfig(config: { workspaceRoot: string; activeDocId: string }): Promise<void> {
+    const userDataDir = await this.userDataDirectory();
+    const extensionDir = path.join(userDataDir, "extensions");
+    await mkdir(extensionDir, { recursive: true });
+    await writeFile(
+      path.join(extensionDir, companionConfigFile),
+      `${JSON.stringify(
+        {
+          workspaceRoot: path.resolve(config.workspaceRoot),
+          activeDocId: config.activeDocId,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+
+  private async userDataDirectory(): Promise<string> {
+    const result = await this.run(["--user-data-directory"], { timeoutMs: 15_000 });
+    const directory = result.stdout.trim().split(/\r?\n/)[0]?.trim();
+    if (!directory) {
+      throw new InkMcpError("INKSCAPE_FAILED", "Could not discover Inkscape user data directory.");
+    }
+    return path.resolve(directory);
+  }
+
+  private async tryWindowsGuiRefresh(timeoutMs?: number): Promise<NonNullable<InkscapeResult["redraw"]>> {
+    const script = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Runtime.InteropServices;
+namespace Win32 {
+public static class Native {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxCount);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder text, int maxCount);
+  [DllImport("user32.dll")] public static extern bool InvalidateRect(IntPtr hWnd, IntPtr rect, bool erase);
+  [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool RedrawWindow(IntPtr hWnd, IntPtr rect, IntPtr region, uint flags);
+}
+}
+"@
+$flags = 0x0001 -bor 0x0080 -bor 0x0100 -bor 0x0400
+$handles = [System.Collections.Generic.List[string]]::new()
+[Win32.Native]::EnumWindows({
+  param($hWnd, $lParam)
+  [uint32]$windowPid = 0
+  [void][Win32.Native]::GetWindowThreadProcessId($hWnd, [ref]$windowPid)
+  $title = [System.Text.StringBuilder]::new(512)
+  $class = [System.Text.StringBuilder]::new(256)
+  [void][Win32.Native]::GetWindowText($hWnd, $title, $title.Capacity)
+  [void][Win32.Native]::GetClassName($hWnd, $class, $class.Capacity)
+  if ($title.ToString() -like '*Inkscape*' -and $class.ToString() -eq 'gdkWindowToplevel') {
+    [void][Win32.Native]::InvalidateRect($hWnd, [IntPtr]::Zero, $true)
+    [void][Win32.Native]::RedrawWindow($hWnd, [IntPtr]::Zero, [IntPtr]::Zero, $flags)
+    [void][Win32.Native]::UpdateWindow($hWnd)
+    $handles.Add("$hWnd|$windowPid|$($title.ToString())") | Out-Null
+  }
+  return $true
+}, [IntPtr]::Zero) | Out-Null
+[pscustomobject]@{ refreshed = ($handles.Count -gt 0); handles = $handles } | ConvertTo-Json -Compress
+`;
+    try {
+      const result = await this.runProcess("powershell", ["-NoProfile", "-Command", script], timeoutMs ?? 5_000);
+      const parsed = safeJsonParse(result.stdout);
+      return {
+        attempted: true,
+        method: "win32_window_refresh",
+        refreshed: Boolean(parsed && typeof parsed === "object" && "refreshed" in parsed ? (parsed as Record<string, unknown>).refreshed : false),
+        details: parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined,
+      };
+    } catch (error) {
+      return {
+        attempted: true,
+        method: "win32_window_refresh",
+        refreshed: false,
+        details: { message: error instanceof Error ? error.message : String(error) },
+      };
+    }
+  }
+}
+
+export function isUnsafeActiveWindowRefreshDisabled(): boolean {
+  return process.platform === "win32" && process.env[unsafeActiveWindowRefreshEnv] !== "1";
+}
+
+export function buildActiveWindowAttributeSyncActions(updates: DirectAttributeUpdate[]): string {
+  const actions = ["select-clear"];
+  for (const update of updates) {
+    actions.push(
+      `select-by-id:${encodeActionValue(assertSafeActionElementId(update.elementId))}`,
+      `object-set-attribute:${encodeActionValue(assertSafeActionAttributeName(update.attributeName))},${encodeActionValue(update.value)}`,
+      "select-clear",
+    );
+  }
+  return actions.join(";");
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -203,4 +361,39 @@ function positiveEnvInt(name: string): number | undefined {
   if (!raw) return undefined;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function safeJsonParse(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+}
+
+function assertSafeActionElementId(elementId: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/.test(elementId)) {
+    throw new InkMcpError("INVALID_INPUT", "Element id is not safe for Inkscape active-window action sync.", {
+      elementId,
+    });
+  }
+  return elementId;
+}
+
+function assertSafeActionAttributeName(attributeName: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/.test(attributeName) || attributeName === "id") {
+    throw new InkMcpError("INVALID_INPUT", "Attribute name is not safe for Inkscape active-window action sync.", {
+      attributeName,
+    });
+  }
+  return attributeName;
+}
+
+function encodeActionValue(value: string): string {
+  if (/[;\r\n]/.test(value)) {
+    throw new InkMcpError("INVALID_INPUT", "Value is not safe for Inkscape active-window action sync.");
+  }
+  return value;
 }

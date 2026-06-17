@@ -2,6 +2,14 @@ import { InkMcpError } from "./errors.js";
 import type { Document as XmlDocument, Element as XmlElement } from "@xmldom/xmldom";
 import { assertSafeElementId, createElementId, makeUniqueElementId } from "./ids.js";
 import {
+  applyPathNodeEdits,
+  describeEditablePathData,
+  pathDataFromInput,
+  type EditablePathSegmentInfo,
+  type PathNodeEdit,
+  type PathSegment,
+} from "./path-data.js";
+import {
   collectElementIds,
   findElementById,
   getSvgRoot,
@@ -9,7 +17,7 @@ import {
   serializeSvg,
   SVG_NS,
 } from "./svg-document.js";
-import { elementChildren, parseSvgFragment, supportedElementTypes } from "./validation.js";
+import { elementChildren, parseSvgFragment, supportedElementTypes, walkElements } from "./validation.js";
 
 export type AttributeValue = string | number | boolean;
 export type AttributeMap = Record<string, AttributeValue>;
@@ -40,6 +48,49 @@ export interface OperationResult {
   renamedIds?: Record<string, string>;
 }
 
+export interface AttributeValueReplacement {
+  from: string;
+  to: string;
+  attributeNames?: string[];
+  styleProperties?: string[];
+}
+
+export interface AttributeValueReplacementResult {
+  changedElementIds: string[];
+  changedElementCount: number;
+  changedAttributeCount: number;
+  replacementCount: number;
+  directAttributeUpdates: DirectAttributeUpdate[];
+}
+
+export interface DirectAttributeUpdate {
+  elementId: string;
+  attributeName: string;
+  value: string;
+}
+
+export interface NudgePathElementResult {
+  elementId: string;
+  previousD: string;
+  nextD: string;
+  dx: number;
+  dy: number;
+  width: number;
+}
+
+export interface PathDataEditResult {
+  elementId: string;
+  previousD?: string;
+  nextD: string;
+}
+
+export interface PathNodesQueryResult {
+  elementId: string;
+  d: string;
+  segmentCount: number;
+  segments: EditablePathSegmentInfo[];
+}
+
 export function addElementToSvg(
   svg: string,
   input: {
@@ -66,6 +117,162 @@ export function updateElementInSvg(
   const document = parseSvgDocument(svg);
   updateElement(document, input);
   return { svg: serializeSvg(document), elementId: input.elementId };
+}
+
+export function nudgePathElementInSvg(
+  svg: string,
+  input: {
+    elementId: string;
+    dx?: number;
+    dy?: number;
+    dxMode?: "half_width_left" | "half_width_right";
+  },
+): { svg: string; result: NudgePathElementResult } {
+  const document = parseSvgDocument(svg);
+  const element = findElementById(document, input.elementId);
+  if ((element.localName ?? element.nodeName) !== "path") {
+    throw new InkMcpError("INVALID_INPUT", "nudge_path_element requires a path element.", {
+      elementId: input.elementId,
+    });
+  }
+  const previousD = element.getAttribute("d");
+  if (!previousD) {
+    throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
+  }
+  const bounds = pathCoordinateBounds(previousD);
+  const modeDx =
+    input.dxMode === "half_width_left"
+      ? -bounds.width / 2
+      : input.dxMode === "half_width_right"
+        ? bounds.width / 2
+        : 0;
+  const dx = (input.dx ?? 0) + modeDx;
+  const dy = input.dy ?? 0;
+  const nextD = translatePathData(previousD, dx, dy);
+  element.setAttribute("d", nextD);
+  return {
+    svg: serializeSvg(document),
+    result: {
+      elementId: input.elementId,
+      previousD,
+      nextD,
+      dx,
+      dy,
+      width: bounds.width,
+    },
+  };
+}
+
+export function drawPathInSvg(
+  svg: string,
+  input: {
+    elementId?: string;
+    parentId?: string;
+    attributes?: AttributeMap;
+    d?: string;
+    segments?: PathSegment[];
+  },
+): { svg: string; result: PathDataEditResult } {
+  const nextD = pathDataFromInput(input, { requireMoveTo: true });
+  const attributes = input.attributes ?? {};
+  if (input.elementId && attributes.id !== undefined && String(attributes.id) !== input.elementId) {
+    throw new InkMcpError("INVALID_INPUT", "draw_path elementId must match attributes.id when both are provided.", {
+      elementId: input.elementId,
+      attributeId: attributes.id,
+    });
+  }
+  if (attributes.d !== undefined) {
+    throw new InkMcpError("INVALID_INPUT", "draw_path path data must be provided through d or segments, not attributes.d.");
+  }
+  const document = parseSvgDocument(svg);
+  const elementId = addElement(document, {
+    type: "path",
+    parentId: input.parentId,
+    attributes: {
+      ...attributes,
+      ...(input.elementId ? { id: input.elementId } : {}),
+      d: nextD,
+    },
+  });
+  return { svg: serializeSvg(document), result: { elementId, nextD } };
+}
+
+export function replacePathDataInSvg(
+  svg: string,
+  input: {
+    elementId: string;
+    d?: string;
+    segments?: PathSegment[];
+  },
+): { svg: string; result: PathDataEditResult } {
+  const nextD = pathDataFromInput(input, { requireMoveTo: true });
+  const document = parseSvgDocument(svg);
+  const element = findPathElement(document, input.elementId);
+  const previousD = element.getAttribute("d") ?? "";
+  element.setAttribute("d", nextD);
+  return { svg: serializeSvg(document), result: { elementId: input.elementId, previousD, nextD } };
+}
+
+export function appendPathSegmentInSvg(
+  svg: string,
+  input: {
+    elementId: string;
+    d?: string;
+    segments?: PathSegment[];
+  },
+): { svg: string; result: PathDataEditResult } {
+  const appendedD = pathDataFromInput(input, { requireMoveTo: false });
+  const document = parseSvgDocument(svg);
+  const element = findPathElement(document, input.elementId);
+  const previousD = element.getAttribute("d");
+  if (!previousD) {
+    throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
+  }
+  const nextD = `${previousD.trim()} ${appendedD}`.trim();
+  element.setAttribute("d", nextD);
+  return { svg: serializeSvg(document), result: { elementId: input.elementId, previousD, nextD } };
+}
+
+export function editPathNodesInSvg(
+  svg: string,
+  input: {
+    elementId: string;
+    edits: PathNodeEdit[];
+  },
+): { svg: string; result: PathDataEditResult & { editCount: number } } {
+  const document = parseSvgDocument(svg);
+  const element = findPathElement(document, input.elementId);
+  const previousD = element.getAttribute("d");
+  if (!previousD) {
+    throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
+  }
+  const nextD = applyPathNodeEdits(previousD, input.edits);
+  element.setAttribute("d", nextD);
+  return {
+    svg: serializeSvg(document),
+    result: { elementId: input.elementId, previousD, nextD, editCount: input.edits.length },
+  };
+}
+
+export function queryPathNodesInSvg(
+  svg: string,
+  input: {
+    elementId: string;
+  },
+): PathNodesQueryResult {
+  const document = parseSvgDocument(svg);
+  const element = findPathElement(document, input.elementId);
+  const d = element.getAttribute("d");
+  if (!d) {
+    throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
+  }
+  const segments = describeEditablePathData(d);
+  return {
+    elementId: input.elementId,
+    d,
+    segmentCount: segments.length,
+    segments,
+  };
 }
 
 export function deleteElementFromSvg(svg: string, elementId: string): { svg: string; elementId: string } {
@@ -148,6 +355,68 @@ export function insertFragmentIntoSvg(
   return { svg: serializeSvg(document), insertedElementIds, renamedIds };
 }
 
+export function replaceAttributeValuesInSvg(
+  svg: string,
+  input: { replacements: AttributeValueReplacement[]; scopeElementIds?: string[] },
+): { svg: string; result: AttributeValueReplacementResult } {
+  const document = parseSvgDocument(svg);
+  const root = getSvgRoot(document);
+  const scopedElements = input.scopeElementIds?.map((elementId) => findElementById(document, elementId));
+  const elements = scopedElements ? scopedElements.flatMap((element) => walkElements(element)) : walkElements(root);
+  const changedElementIds = new Set<string>();
+  let changedElementCount = 0;
+  let changedAttributeCount = 0;
+  let replacementCount = 0;
+  const directAttributeUpdates: DirectAttributeUpdate[] = [];
+
+  for (const element of elements) {
+    let elementChanged = false;
+    for (const replacement of input.replacements) {
+      const attributes = replacement.attributeNames ?? defaultReplaceableAttributes;
+      for (const attributeName of attributes) {
+        if (!element.hasAttribute(attributeName)) continue;
+        const currentValue = element.getAttribute(attributeName) ?? "";
+        if (currentValue !== replacement.from) continue;
+        element.setAttribute(attributeName, replacement.to);
+        const elementId = element.getAttribute("id");
+        if (elementId) {
+          directAttributeUpdates.push({ elementId, attributeName, value: replacement.to });
+        }
+        changedAttributeCount += 1;
+        replacementCount += 1;
+        elementChanged = true;
+      }
+
+      if (element.hasAttribute("style")) {
+        const styleResult = replaceStyleValues(element.getAttribute("style") ?? "", replacement);
+        if (styleResult.changed) {
+          element.setAttribute("style", styleResult.style);
+          changedAttributeCount += 1;
+          replacementCount += styleResult.replacementCount;
+          elementChanged = true;
+        }
+      }
+    }
+
+    if (elementChanged) {
+      changedElementCount += 1;
+      const id = element.getAttribute("id");
+      if (id) changedElementIds.add(id);
+    }
+  }
+
+  return {
+    svg: serializeSvg(document),
+    result: {
+      changedElementIds: [...changedElementIds],
+      changedElementCount,
+      changedAttributeCount,
+      replacementCount,
+      directAttributeUpdates,
+    },
+  };
+}
+
 function addElement(
   document: XmlDocument,
   input: {
@@ -212,6 +481,14 @@ function deleteElement(document: XmlDocument, elementId: string): void {
   parent.removeChild(element);
 }
 
+function findPathElement(document: XmlDocument, elementId: string): XmlElement {
+  const element = findElementById(document, elementId);
+  if ((element.localName ?? element.nodeName) !== "path") {
+    throw new InkMcpError("INVALID_INPUT", "Path data edits require a path element.", { elementId });
+  }
+  return element;
+}
+
 function applyAttributes(element: XmlElement, attributes: AttributeMap, options: { skipId: boolean }): void {
   for (const [key, value] of Object.entries(attributes)) {
     if (key === "textContent") continue;
@@ -221,6 +498,87 @@ function applyAttributes(element: XmlElement, attributes: AttributeMap, options:
     }
     element.setAttribute(key, String(value));
   }
+}
+
+const defaultReplaceableAttributes = [
+  "fill",
+  "stroke",
+  "stop-color",
+  "flood-color",
+  "lighting-color",
+  "color",
+  "opacity",
+  "fill-opacity",
+  "stroke-opacity",
+  "stop-opacity",
+  "stroke-width",
+  "transform",
+  "d",
+  "x",
+  "y",
+  "cx",
+  "cy",
+  "rx",
+  "ry",
+  "r",
+  "width",
+  "height",
+] as const;
+
+const defaultReplaceableStyleProperties = new Set<string>(defaultReplaceableAttributes);
+
+function replaceStyleValues(style: string, replacement: AttributeValueReplacement) {
+  const allowedProperties = new Set(replacement.styleProperties ?? [...defaultReplaceableStyleProperties]);
+  const declarations = style.split(";");
+  let changed = false;
+  let replacementCount = 0;
+
+  const updatedDeclarations = declarations.map((declaration) => {
+    const colonIndex = declaration.indexOf(":");
+    if (colonIndex === -1) return declaration;
+
+    const property = declaration.slice(0, colonIndex).trim();
+    const value = declaration.slice(colonIndex + 1).trim();
+    if (!allowedProperties.has(property) || value !== replacement.from) {
+      return declaration;
+    }
+
+    changed = true;
+    replacementCount += 1;
+    const prefix = declaration.slice(0, colonIndex + 1);
+    const leadingWhitespace = (declaration.slice(colonIndex + 1).match(/^\s*/) ?? [""])[0];
+    return `${prefix}${leadingWhitespace}${replacement.to}`;
+  });
+
+  return { changed, replacementCount, style: updatedDeclarations.join(";") };
+}
+
+function pathCoordinateBounds(pathData: string): { minX: number; maxX: number; width: number } {
+  const move = /^M\s*([-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?)\s+[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?c/.exec(pathData);
+  if (!move) {
+    throw new InkMcpError("INVALID_INPUT", "Only simple M...c path data is supported by nudge_path_element.");
+  }
+  const numbersAfterCurve = pathData
+    .slice(move[0].length)
+    .match(/[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g)
+    ?.map(Number);
+  if (!numbersAfterCurve || numbersAfterCurve.length < 6) {
+    throw new InkMcpError("INVALID_INPUT", "Only simple M...c path data is supported by nudge_path_element.");
+  }
+  const startX = Number(move[1]);
+  const endDx = numbersAfterCurve[4];
+  return { minX: Math.min(startX, startX + endDx), maxX: Math.max(startX, startX + endDx), width: Math.abs(endDx) };
+}
+
+function translatePathData(pathData: string, dx: number, dy: number): string {
+  return pathData.replace(
+    /^M\s*([-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?)\s+([-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?)/,
+    (_raw, x: string, y: string) => `M${formatPathNumber(Number(x) + dx)} ${formatPathNumber(Number(y) + dy)}`,
+  );
+}
+
+function formatPathNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function renameFragmentIds(root: XmlElement, renamedIds: Record<string, string>): void {
