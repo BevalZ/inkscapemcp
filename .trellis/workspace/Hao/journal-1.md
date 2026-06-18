@@ -795,3 +795,36 @@ Added transform_path_points translate tool for explicit path point movement with
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Path data validation summary
+
+**Date**: 2026-06-19
+**Task**: Path data validation summary
+**Branch**: `main`
+
+### Summary
+
+Added validate_path_data read-only path preflight with compact summaries, typed validation failures, MCP registration coverage, README docs, and Phase 1 loop 18 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5486035` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
