@@ -140,7 +140,12 @@ Implemented remaining sync-boundary foundations, vectorization/import-export/que
 
 ### Main Changes
 
-(Add details)
+- Added `create_checkpoint({ docId, label?, description? })` as a registered MCP tool.
+- Added `Workspace.createCheckpointSnapshot` to copy the current SVG into history without replacing `current.svg`.
+- Returned checkpoint id, snapshot id/path, optional label/description, and document summary.
+- Wrote compact operation-log entries without raw SVG and avoided GUI refresh for unchanged content.
+- Documented the checkpoint contract in `README.md` and `.trellis/spec/backend/roadmap-memory.md`.
+- Archived `.trellis/tasks/06-18-phase1-checkpoint-tool-loop`.
 
 ### Git Commits
 
@@ -330,3 +335,41 @@ Completed Phase 1 Loop 4 by adding read-only query_document includePathNodes sum
 ### Next Steps
 
 - Continue Phase 1 with the next recommended query/path reliability hardening loop.
+
+
+## Session 10: Phase 1 Checkpoint Tool Loop
+
+**Date**: 2026-06-18
+**Task**: Phase 1 Checkpoint Tool Loop
+**Branch**: `main`
+
+### Summary
+
+Completed Phase 1 Loop 5 by adding create_checkpoint as a history-based recovery anchor that leaves current.svg byte-identical, avoids GUI refresh, and records compact logs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51feb53` | feat: add Phase 1 checkpoint tool |
+| `b220835` | chore(task): archive 06-18-phase1-checkpoint-tool-loop |
+
+### Testing
+
+- [OK] `npm run typecheck`
+- [OK] `npm test` (21 files / 97 tests)
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Continue Phase 1 recovery/replay foundation with the next narrow slice, likely stale-baseline dry-run or recovery helper work.
