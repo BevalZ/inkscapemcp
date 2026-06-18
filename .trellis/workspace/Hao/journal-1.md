@@ -861,3 +861,36 @@ Extended transform_path_points with set_absolute for exact endpoint/control-hand
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Relative path point transform
+
+**Date**: 2026-06-19
+**Task**: Relative path point transform
+**Branch**: `main`
+
+### Summary
+
+Extended transform_path_points with set_relative for segment-base-relative endpoint/control-handle placement, including schema validation, path-order base handling, direct d sync behavior, tests, README docs, and Phase 1 loop 20 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79161f9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
