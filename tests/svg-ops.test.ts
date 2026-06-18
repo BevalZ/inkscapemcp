@@ -375,6 +375,82 @@ describe("SVG operations", () => {
     expect(result.result.nextD).toBe("M10 10 l10 15 c2 3 4 5 13 10");
   });
 
+  it("sets explicit path points to segment-relative coordinates", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 C20 20 21 21 22 22",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 2, point: "c1" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: {
+        type: "set_relative",
+        points: [
+          { x: 8, y: 9 },
+          { x: 4, y: 5 },
+          { x: 11, y: 12 },
+        ],
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      elementId: "editable-path",
+      previousD: "M10 10 l5 1 C20 20 21 21 22 22",
+      nextD: "M10 10 l8 9 C22 24 21 21 29 31",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "c1" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [1, 2],
+      transform: {
+        type: "set_relative",
+        points: [
+          { x: 8, y: 9 },
+          { x: 4, y: 5 },
+          { x: 11, y: 12 },
+        ],
+      },
+    });
+    expect(result.svg).toContain('d="M10 10 l8 9 C22 24 21 21 29 31"');
+  });
+
+  it("sets relative targets correctly even when selections are provided out of path order", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 c2 3 4 5 6 7",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 2, point: "end" },
+          { segmentIndex: 1, point: "end" },
+        ],
+      },
+      transform: {
+        type: "set_relative",
+        points: [
+          { x: 13, y: 10 },
+          { x: 10, y: 15 },
+        ],
+      },
+    });
+
+    expect(result.result.nextD).toBe("M10 10 l10 15 c2 3 4 5 13 10");
+  });
+
   it("rejects set_absolute when target point count does not match the selection", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
@@ -392,6 +468,27 @@ describe("SVG operations", () => {
           ],
         },
         transform: { type: "set_absolute", points: [{ x: 3, y: 3 }] },
+      }),
+    ).toThrow("target point count");
+  });
+
+  it("rejects set_relative when target point count does not match the selection", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "end" },
+            { segmentIndex: 0, point: "end" },
+          ],
+        },
+        transform: { type: "set_relative", points: [{ x: 3, y: 3 }] },
       }),
     ).toThrow("target point count");
   });

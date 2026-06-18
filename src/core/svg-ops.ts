@@ -123,6 +123,10 @@ export type PathPointTransform =
   | {
       type: "set_absolute";
       points: Array<{ x: number; y: number }>;
+    }
+  | {
+      type: "set_relative";
+      points: Array<{ x: number; y: number }>;
     };
 
 export function addElementToSvg(
@@ -602,14 +606,14 @@ function validateTransformPathPointsInput(input: {
   }
 
   if (input.transform.points.length !== input.pointSelector.points.length) {
-    throw new InkMcpError("INVALID_INPUT", "set_absolute target point count must match selected point count.", {
+    throw new InkMcpError("INVALID_INPUT", `${input.transform.type} target point count must match selected point count.`, {
       selectedPointCount: input.pointSelector.points.length,
       targetPointCount: input.transform.points.length,
     });
   }
   for (const point of input.transform.points) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-      throw new InkMcpError("INVALID_INPUT", "set_absolute target coordinates must be finite.", point);
+      throw new InkMcpError("INVALID_INPUT", `${input.transform.type} target coordinates must be finite.`, point);
     }
   }
 }
@@ -627,7 +631,7 @@ function pathPointTransformEdits(points: PathPointSelection[], transform: PathPo
 
   return points
     .map((point, index) => ({
-      type: "set_point_absolute" as const,
+      type: transform.type === "set_absolute" ? "set_point_absolute" as const : "set_point_relative" as const,
       segmentIndex: point.segmentIndex,
       point: point.point,
       x: transform.points[index].x,

@@ -44,6 +44,13 @@ export type PathNodeEdit =
       y: number;
     }
   | {
+      type: "set_point_relative";
+      segmentIndex: number;
+      point: EditablePathPoint;
+      x: number;
+      y: number;
+    }
+  | {
       type: "insert_segment";
       index: number;
       segment: PathSegment;
@@ -284,6 +291,9 @@ export function applyPathNodeEdits(pathData: string, edits: PathNodeEdit[]): str
         break;
       case "set_point_absolute":
         setPathPointAbsolute(segments, edit);
+        break;
+      case "set_point_relative":
+        setPathPointRelative(segments, edit);
         break;
       case "insert_segment":
         insertPathSegment(segments, edit);
@@ -579,6 +589,21 @@ function setPathPointAbsolute(
   segments: EditablePathSegment[],
   edit: Extract<PathNodeEdit, { type: "set_point_absolute" }>,
 ) {
+  setPathPointFromTarget(segments, edit, "absolute");
+}
+
+function setPathPointRelative(
+  segments: EditablePathSegment[],
+  edit: Extract<PathNodeEdit, { type: "set_point_relative" }>,
+) {
+  setPathPointFromTarget(segments, edit, "relative");
+}
+
+function setPathPointFromTarget(
+  segments: EditablePathSegment[],
+  edit: Extract<PathNodeEdit, { type: "set_point_absolute" | "set_point_relative" }>,
+  targetMode: "absolute" | "relative",
+) {
   const segment = segments[edit.segmentIndex];
   if (!segment) {
     throw new InkMcpError("INVALID_INPUT", "Path segment index is out of range.", {
@@ -587,14 +612,17 @@ function setPathPointAbsolute(
     });
   }
   if (!Number.isFinite(edit.x) || !Number.isFinite(edit.y)) {
-    throw new InkMcpError("INVALID_INPUT", "Absolute path point coordinates must be finite.", {
+    throw new InkMcpError("INVALID_INPUT", "Path point target coordinates must be finite.", {
       x: edit.x,
       y: edit.y,
     });
   }
 
   const point = currentEditablePoint(segments, edit);
-  const target = { x: edit.x, y: edit.y };
+  const target =
+    targetMode === "absolute"
+      ? { x: edit.x, y: edit.y }
+      : { x: point.base.x + edit.x, y: point.base.y + edit.y };
   const nextPoint = point.relative
     ? { x: target.x - point.base.x, y: target.y - point.base.y }
     : target;
@@ -623,12 +651,42 @@ function currentEditablePoint(
     });
   }
   return {
-    base: {
-      x: absolutePoint.x - rawPoint.x,
-      y: absolutePoint.y - rawPoint.y,
-    },
+    base: editableSegmentBase(segments, edit.segmentIndex),
     relative: info.relative,
   };
+}
+
+function editableSegmentBase(segments: EditablePathSegment[], segmentIndex: number): { x: number; y: number } {
+  let current = { x: 0, y: 0 };
+  let subpathStart = { x: 0, y: 0 };
+
+  for (let index = 0; index < segmentIndex; index += 1) {
+    const segment = segments[index];
+    const relative = isRelativeCommand(segment.cmd);
+    switch (segment.cmd) {
+      case "M":
+      case "m":
+      case "L":
+      case "l":
+        current = resolvePathPoint(current, { x: segment.x, y: segment.y }, relative);
+        if (segment.cmd === "M" || segment.cmd === "m") {
+          subpathStart = current;
+        }
+        break;
+      case "C":
+      case "c":
+      case "Q":
+      case "q":
+        current = resolvePathPoint(current, { x: segment.x, y: segment.y }, relative);
+        break;
+      case "Z":
+      case "z":
+        current = subpathStart;
+        break;
+    }
+  }
+
+  return current;
 }
 
 function assignPathPoint(

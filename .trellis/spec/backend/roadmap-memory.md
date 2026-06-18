@@ -103,6 +103,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 17 established `transform_path_points` as the first bounded transform-side path editing primitive. It translates explicit `end`/`c1`/`c2` selections on one existing path, rejects empty, duplicate, non-finite, zero, unavailable, or out-of-range point edits before writing, snapshots only after validation succeeds, logs and writes operation diagnostics, and uses direct active-window `d` attribute sync.
 - Phase 1 loop 18 established `validate_path_data` as a read-only raw path preflight surface. It validates one `d` string without `docId`, returns compact command/segment/editable-point summaries on success, returns typed `ok: false` validation errors on malformed or unsupported path data, supports append-style validation with `requireMoveTo: false`, and must not touch workspace files, snapshots, logs, metadata, GUI sync, or Inkscape.
 - Phase 1 loop 19 extended `transform_path_points` with `set_absolute` for exact endpoint/control-handle placement after normalized path inspection. It keeps the existing explicit point-selection boundary, maps ordered absolute target coordinates back into absolute or relative segment storage as needed, rejects selection/target mismatches before snapshot/write, and preserves the same pre-pull, snapshot, diagnostics, log, and direct `d` sync contract as translate.
+- Phase 1 loop 20 extended `transform_path_points` with `set_relative` for segment-base-relative endpoint/control-handle placement. It complements raw and absolute path-node query views, stores targets directly on relative commands, maps targets to `base + target` for absolute commands, applies edits in path order, and preserves the same validation, snapshot, diagnostics, log, and direct `d` sync boundary as other point transforms.
 
 ### 4. Validation & Error Matrix
 
@@ -958,6 +959,101 @@ await transformPathPoints({
 ```
 
 Use the point transform boundary for exact coordinate edits so validation, bidirectional pre-pull, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
+
+## Scenario: Path Point Relative Set Transform Contract
+
+### 1. Scope / Trigger
+
+- Trigger: setting selected path endpoint/control-handle positions relative to each segment's current base point after inspecting raw or normalized path nodes.
+- Scope: `transform_path_points` with transform type `set_relative` for one existing path element.
+- Out of scope: raw attribute point writes, rotation, scaling, matrix transforms, multi-path transforms, path segment creation/deletion, command normalization, and arc or shorthand command support.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- `pointSelector`: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- `transform`: `{ type: "set_relative", points: Array<{ x: number, y: number }> }`
+- The `transform.points` array maps to `pointSelector.points` by array order.
+- Existing `translate` and `set_absolute` transforms remain supported.
+
+### 3. Contracts
+
+- The tool mutates only the target path element's `d` attribute and preserves the element id and object tree.
+- Callers must select explicit segment indexes and point names; hidden selection state is not used.
+- `set_relative` target count must match selected point count.
+- Target coordinates are relative to the selected segment's current base point, not raw unchecked attribute writes.
+- Relative commands store the target coordinates directly.
+- Absolute commands preserve command case and store `current segment base + target`.
+- Edits are applied in path order so later segment bases account for earlier edited endpoints.
+- The response preserves caller-selected point order and returns the transform payload.
+- Existing parser support remains `M`, `L`, `C`, `Q`, and `Z`, including relative variants.
+- Active bidirectional GUI state must be pre-pulled before current-state write validation.
+- Successful writes snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+
+### 4. Validation & Error Matrix
+
+- Empty selection -> schema validation failure, no pre-pull or write.
+- Duplicate selected point -> schema validation failure, no pre-pull or write.
+- Target count mismatch -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Non-finite target coordinate -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Segment index out of range -> `INVALID_INPUT`, no snapshot/write.
+- Point unavailable for the selected command -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: query a relative curve and set its raw relative endpoint/control offsets directly through `set_relative`.
+- Good: set relative offsets on an absolute curve while preserving the absolute command form and writing the corresponding absolute coordinates.
+- Base: caller needs absolute coordinates; use `set_absolute`.
+- Bad: treating `set_relative` as an unchecked raw path-data patch that ignores segment bases.
+- Bad: replacing the whole SVG document to move one handle.
+
+### 6. Tests Required
+
+- Schema tests accept `set_relative` and reject mismatched target counts.
+- Core tests prove relative command targets are stored directly.
+- Core tests prove absolute command targets are written as `base + target`.
+- Core tests prove out-of-order selections still produce correct path-order relative-coordinate results.
+- Tool-level tests prove successful calls snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests prove invalid target selections leave `current.svg` and history unchanged and do not call Inkscape refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replacePathData({
+  docId,
+  elementId: "mouth",
+  d: manuallyPatchedD,
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: {
+    points: [
+      { segmentIndex: 1, point: "c1" },
+      { segmentIndex: 1, point: "end" },
+    ],
+  },
+  transform: {
+    type: "set_relative",
+    points: [
+      { x: 16, y: 6 },
+      { x: 38, y: -6 },
+    ],
+  },
+});
+```
+
+Use `set_relative` when the caller has segment-base-relative target coordinates and wants the same pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync guarantees as other point transforms.
 
 ## Phase Summary
 

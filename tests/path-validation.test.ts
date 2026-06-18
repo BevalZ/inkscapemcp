@@ -159,7 +159,7 @@ describe("path tool validation", () => {
     ).toThrow("at least one axis");
   });
 
-  it("accepts set_absolute point transforms and rejects mismatched target counts", () => {
+  it("accepts set_absolute and set_relative point transforms and rejects mismatched target counts", () => {
     expect(
       transformPathPointsSchema.parse({
         docId: "path-doc",
@@ -201,6 +201,51 @@ describe("path tool validation", () => {
         transform: {
           type: "set_absolute",
           points: [{ x: 10, y: 11 }],
+        },
+      }),
+    ).toThrow("target point count");
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "c1" },
+            { segmentIndex: 1, point: "end" },
+          ],
+        },
+        transform: {
+          type: "set_relative",
+          points: [
+            { x: 3, y: 4 },
+            { x: 8, y: 9 },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "set_relative",
+        points: [
+          { x: 3, y: 4 },
+          { x: 8, y: 9 },
+        ],
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "c1" },
+            { segmentIndex: 1, point: "end" },
+          ],
+        },
+        transform: {
+          type: "set_relative",
+          points: [{ x: 3, y: 4 }],
         },
       }),
     ).toThrow("target point count");

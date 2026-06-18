@@ -243,6 +243,13 @@ export const transformPathPointsSchema = z.object({
         y: z.number().finite(),
       })).min(1),
     }),
+    z.object({
+      type: z.literal("set_relative"),
+      points: z.array(z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      })).min(1),
+    }),
   ]).superRefine((transform, ctx) => {
     if (transform.type === "translate" && transform.dx === 0 && transform.dy === 0) {
       ctx.addIssue({
@@ -253,11 +260,11 @@ export const transformPathPointsSchema = z.object({
     }
   }),
 }).superRefine((input, ctx) => {
-  if (input.transform.type !== "set_absolute") return;
+  if (input.transform.type !== "set_absolute" && input.transform.type !== "set_relative") return;
   if (input.transform.points.length !== input.pointSelector.points.length) {
     ctx.addIssue({
       code: "custom",
-      message: "set_absolute target point count must match selected point count.",
+      message: `${input.transform.type} target point count must match selected point count.`,
       path: ["transform", "points"],
     });
   }
