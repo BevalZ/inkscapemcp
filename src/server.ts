@@ -32,6 +32,7 @@ import {
   pathGeometryMultiSchema,
   pullGuiStateSchema,
   queryPathNodesSchema,
+  recoverDocumentSchema,
   queryDocumentSchema,
   refreshInInkscapeSchema,
   renderPreviewSchema,
@@ -55,6 +56,7 @@ import {
   importSvgDocument,
   listHistory,
   queryDocument,
+  recoverDocument,
   replaceDocumentSvg,
   rollbackDocument,
 } from "./tools/document.js";
@@ -427,6 +429,17 @@ export function createServer() {
       inputSchema: diffDocumentSnapshotsSchema,
     },
     (input) => runTool("diff_document_snapshots", () => diffDocumentSnapshots(input, ctx)),
+  );
+
+  server.registerTool(
+    "recover_document",
+    {
+      title: "Recover document",
+      description:
+        "Recover current.svg from an explicit history snapshot or checkpoint after snapshotting the current state.",
+      inputSchema: recoverDocumentSchema,
+    },
+    (input) => runTool("recover_document", () => recoverDocument(input, ctx)),
   );
 
   server.registerTool(

@@ -8,7 +8,7 @@ import { InkscapeCli } from "../src/adapters/inkscape-cli.js";
 import { Workspace } from "../src/adapters/workspace.js";
 import { createSvgDocument } from "../src/core/svg-document.js";
 import { applyOperationsToSvg } from "../src/core/svg-ops.js";
-import { createCheckpoint, replaceDocumentSvg } from "../src/tools/document.js";
+import { createCheckpoint, recoverDocument, replaceDocumentSvg } from "../src/tools/document.js";
 
 describe("workspace", () => {
   let root: string;
@@ -149,5 +149,80 @@ describe("workspace", () => {
     expect(log).toContain('"label":"Before risky edit"');
     expect(log).toContain('"hasDescription":true');
     expect(log).not.toContain(beforeSvg);
+  });
+
+  it("recovers from an explicit snapshot after snapshotting current state and refreshing the GUI", async () => {
+    const svg = createSvgDocument({ title: "Recover", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-doc", "Recover", svg);
+    const checkpoint = await createCheckpoint(
+      { docId: "recover-doc", label: "Known good" },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("recover-doc", "break_doc", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<rect id="bad-edit" x="1" y="1" width="3" height="3"/></svg>'),
+      result: {},
+    }));
+    const brokenSvg = await workspace.readSvg("recover-doc");
+    expect(brokenSvg).toContain("bad-edit");
+    const inkscape = new InkscapeCli();
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    const result = await recoverDocument(
+      { docId: "recover-doc", snapshotId: checkpoint.snapshotId, confirmDiscardGuiState: false },
+      { workspace, inkscape, autoRefresh: { enabled: true, timeoutMs: 4321 } },
+    );
+
+    expect(companion).toHaveBeenCalledWith({
+      docId: "recover-doc",
+      workspaceRoot: workspace.paths.root,
+      timeoutMs: 4321,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "recover-doc",
+      recoveredFromSnapshotId: checkpoint.snapshotId,
+      preRecoverySnapshotPath: expect.stringContaining("recover_document"),
+      restoredPath: checkpoint.snapshotPath,
+      currentSvgPath: workspace.documentPaths("recover-doc").currentSvg,
+      guiRefresh: { attempted: true, refreshed: true, method: "companion_extension" },
+    });
+    await expect(workspace.readSvg("recover-doc")).resolves.not.toContain("bad-edit");
+    await expect(readFile(result.preRecoverySnapshotPath, "utf8")).resolves.toBe(brokenSvg);
+
+    const history = await workspace.listHistory("recover-doc");
+    expect(history.map((snapshot) => snapshot.snapshotId)).toContain(checkpoint.snapshotId);
+    expect(history.some((snapshot) => snapshot.path === result.preRecoverySnapshotPath)).toBe(true);
+
+    const log = await readFile(workspace.documentPaths("recover-doc").operationsLog, "utf8");
+    expect(log).toContain('"toolName":"recover_document"');
+    expect(log).toContain(`"snapshotId":"${checkpoint.snapshotId}"`);
+    expect(log).not.toContain(brokenSvg);
+  });
+
+  it("rejects missing and unsafe recovery snapshots without changing current SVG", async () => {
+    const svg = createSvgDocument({ title: "Recover rejects", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-reject-doc", "Recover rejects", svg);
+    const before = await workspace.readSvg("recover-reject-doc");
+
+    await expect(
+      recoverDocument(
+        { docId: "recover-reject-doc", snapshotId: "../escape", confirmDiscardGuiState: false },
+        { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(workspace.readSvg("recover-reject-doc")).resolves.toBe(before);
+
+    await expect(
+      recoverDocument(
+        { docId: "recover-reject-doc", snapshotId: "missing-snapshot", confirmDiscardGuiState: false },
+        { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+      ),
+    ).rejects.toMatchObject({ code: "DOC_NOT_FOUND" });
+    await expect(workspace.readSvg("recover-reject-doc")).resolves.toBe(before);
   });
 });

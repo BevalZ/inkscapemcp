@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for recovery tool changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for validation, server registration, workspace, and document tools."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error semantics for missing/unsafe snapshots and recovery failures."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Snapshot-before-write, schema, and forbidden-pattern requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Compact operation log requirements for recovery."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Filesystem history persistence and no new store."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 recovery/replay contracts."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide routing."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Required because recovery should reuse rollback mechanics."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Required because changes span schema, tool registration, docs, tests, and recovery state."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 source for recovery and replay workstream."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Debug hardening source for recovery foundation."}

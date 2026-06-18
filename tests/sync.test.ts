@@ -18,7 +18,7 @@ import {
   stopGuiSyncPolling,
 } from "../src/tools/sync.js";
 import { exportDocument } from "../src/tools/preview.js";
-import { queryDocument, rollbackDocument } from "../src/tools/document.js";
+import { queryDocument, recoverDocument, rollbackDocument } from "../src/tools/document.js";
 
 describe("bidirectional GUI sync", () => {
   let root: string;
@@ -867,6 +867,33 @@ describe("bidirectional GUI sync", () => {
       { workspace, inkscape, autoRefresh: { enabled: false } },
     );
     expect(result).toMatchObject({ ok: true, restoredPath: expect.stringContaining(`${snapshotId}.svg`) });
+  });
+
+  it("rejects recovery with active bidirectional sync unless discard is confirmed", async () => {
+    await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    const snapshots = await workspace.listHistory("fish");
+    const snapshotId = snapshots[0]?.snapshotId;
+    expect(snapshotId).toBeTruthy();
+
+    await expect(
+      recoverDocument(
+        { docId: "fish", snapshotId: snapshotId as string, confirmDiscardGuiState: false },
+        { workspace, inkscape, autoRefresh: { enabled: false } },
+      ),
+    ).rejects.toThrow("discard active GUI state");
+
+    const result = await recoverDocument(
+      { docId: "fish", snapshotId: snapshotId as string, confirmDiscardGuiState: true },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      recoveredFromSnapshotId: snapshotId,
+      restoredPath: expect.stringContaining(`${snapshotId}.svg`),
+    });
   });
 
   it("strips InkSMCP metadata from SVG export by default", async () => {

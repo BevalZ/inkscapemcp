@@ -26,6 +26,7 @@ import {
   importSvgDocumentSchema,
   listHistorySchema,
   queryDocumentSchema,
+  recoverDocumentSchema,
   replaceDocumentSvgSchema,
   rollbackDocumentSchema,
 } from "../core/validation.js";
@@ -313,6 +314,30 @@ export async function rollbackDocument(input: z.infer<typeof rollbackDocumentSch
     ok: true,
     docId: input.docId,
     snapshotPath: result.snapshotPath,
+    restoredPath: result.restoredPath,
+    currentSvgPath: result.paths.currentSvg,
+  }, refresh);
+}
+
+export async function recoverDocument(input: z.infer<typeof recoverDocumentSchema>, ctx: ToolContext) {
+  if (!input.confirmDiscardGuiState) {
+    await ensureNoActiveBidirectionalConnectionForRollback(ctx, input.docId);
+  }
+  const result = await ctx.workspace.rollback(input.docId, input.snapshotId, "recover_document");
+  await appendOperationLog(result.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "recover_document",
+    inputSummary: { snapshotId: input.snapshotId },
+    snapshotPath: result.snapshotPath,
+    status: "ok",
+  });
+  const refresh = await tryAutoRefreshInInkscape(ctx, result.paths);
+  return withGuiRefreshResult({
+    ok: true,
+    docId: input.docId,
+    recoveredFromSnapshotId: input.snapshotId,
+    preRecoverySnapshotPath: result.snapshotPath,
     restoredPath: result.restoredPath,
     currentSvgPath: result.paths.currentSvg,
   }, refresh);

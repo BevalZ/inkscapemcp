@@ -461,7 +461,11 @@ export class Workspace {
     };
   }
 
-  async rollback(docId: string, snapshotId: string): Promise<{ paths: DocumentPaths; snapshotPath: string; restoredPath: string }> {
+  async rollback(
+    docId: string,
+    snapshotId: string,
+    toolName = "rollback_document",
+  ): Promise<{ paths: DocumentPaths; snapshotPath: string; restoredPath: string }> {
     return this.withDocumentWriteLock(docId, async (paths) => {
       await this.assertDocumentExists(paths);
       const restoredPath = this.historySnapshotPath(docId, snapshotId);
@@ -469,12 +473,12 @@ export class Workspace {
         throw new InkMcpError("DOC_NOT_FOUND", "History snapshot was not found.", { snapshotId });
       });
       const currentSvg = await readFile(paths.currentSvg, "utf8");
-      const snapshotPath = await this.createSnapshot(paths, "rollback_document", currentSvg);
+      const snapshotPath = await this.createSnapshot(paths, toolName, currentSvg);
       const restoredSvg = await readFile(restoredPath, "utf8");
       parseFullSvg(restoredSvg);
       await this.atomicWrite(paths.currentSvg, restoredSvg);
       await this.touchMetadata(paths, restoredSvg, "mcp");
-      await this.createOperationDiffArtifact(paths, "rollback_document", currentSvg, restoredSvg);
+      await this.createOperationDiffArtifact(paths, toolName, currentSvg, restoredSvg);
       return { paths, snapshotPath, restoredPath };
     });
   }

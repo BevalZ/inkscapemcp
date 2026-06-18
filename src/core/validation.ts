@@ -362,6 +362,12 @@ export const rollbackDocumentSchema = z.object({
   confirmDiscardGuiState: z.boolean().default(false),
 });
 
+export const recoverDocumentSchema = z.object({
+  docId: docIdSchema,
+  snapshotId: z.string().min(1),
+  confirmDiscardGuiState: z.boolean().default(false),
+});
+
 export const archiveDocumentSchema = z.object({
   docId: docIdSchema,
 });
