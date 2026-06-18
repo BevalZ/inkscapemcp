@@ -181,6 +181,11 @@ export type PathPointTransform =
       origin: { x: number; y: number };
       sx: number;
       sy: number;
+    }
+  | {
+      type: "rotate";
+      origin: { x: number; y: number };
+      angleDegrees: number;
     };
 
 export function addElementToSvg(
@@ -706,6 +711,22 @@ function validatePathPointTransform(transform: PathPointTransform): void {
     return;
   }
 
+  if (transform.type === "rotate") {
+    if (
+      !Number.isFinite(transform.origin.x) ||
+      !Number.isFinite(transform.origin.y) ||
+      !Number.isFinite(transform.angleDegrees)
+    ) {
+      throw new InkMcpError("INVALID_INPUT", "Rotate transform origin and angleDegrees must be finite.", transform);
+    }
+    if (transform.angleDegrees === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Rotate transform angleDegrees must be non-zero.", {
+        angleDegrees: transform.angleDegrees,
+      });
+    }
+    return;
+  }
+
   for (const point of transform.points) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
       throw new InkMcpError("INVALID_INPUT", `${transform.type} target coordinates must be finite.`, point);
@@ -714,7 +735,7 @@ function validatePathPointTransform(transform: PathPointTransform): void {
 }
 
 function validateResolvedPathPointTransform(points: PathPointSelection[], transform: PathPointTransform): void {
-  if (transform.type === "translate" || transform.type === "scale") return;
+  if (transform.type === "translate" || transform.type === "scale" || transform.type === "rotate") return;
   if (transform.points.length !== points.length) {
     throw new InkMcpError("INVALID_INPUT", `${transform.type} target point count must match selected point count.`, {
       selectedPointCount: points.length,
@@ -1060,6 +1081,26 @@ function pathPointTransformEdits(
           point: point.point,
           x: transform.origin.x + (absolutePoint.x - transform.origin.x) * transform.sx,
           y: transform.origin.y + (absolutePoint.y - transform.origin.y) * transform.sy,
+        };
+      })
+      .sort((left, right) => left.segmentIndex - right.segmentIndex);
+  }
+
+  if (transform.type === "rotate") {
+    const radians = transform.angleDegrees * (Math.PI / 180);
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    return points
+      .map((point) => {
+        const absolutePoint = getSelectedAbsolutePoint(segments, point);
+        const offsetX = absolutePoint.x - transform.origin.x;
+        const offsetY = absolutePoint.y - transform.origin.y;
+        return {
+          type: "set_point_absolute" as const,
+          segmentIndex: point.segmentIndex,
+          point: point.point,
+          x: transform.origin.x + offsetX * cos - offsetY * sin,
+          y: transform.origin.y + offsetX * sin + offsetY * cos,
         };
       })
       .sort((left, right) => left.segmentIndex - right.segmentIndex);

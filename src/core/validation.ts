@@ -381,6 +381,14 @@ export const transformPathPointsSchema = z.object({
       sx: z.number().finite(),
       sy: z.number().finite(),
     }),
+    z.object({
+      type: z.literal("rotate"),
+      origin: z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      }),
+      angleDegrees: z.number().finite(),
+    }),
   ]).superRefine((transform, ctx) => {
     if (transform.type === "translate" && transform.dx === 0 && transform.dy === 0) {
       ctx.addIssue({
@@ -394,6 +402,13 @@ export const transformPathPointsSchema = z.object({
         code: "custom",
         message: "Scale transform factors must be non-zero.",
         path: ["sx"],
+      });
+    }
+    if (transform.type === "rotate" && transform.angleDegrees === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Rotate transform angleDegrees must be non-zero.",
+        path: ["angleDegrees"],
       });
     }
   }),

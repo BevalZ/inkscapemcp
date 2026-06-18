@@ -1,0 +1,9 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index for this Phase 1 path transform slice."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Keep runtime changes inside established core/tool boundaries."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Preserve explicit validation failures and no-write semantics."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Follow TypeScript, Zod, snapshot-first, and test expectations."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Preserve operation log summary behavior for successful writes."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Preserve filesystem-only persistence and snapshot-before-write rules."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Continue the Phase 1 path editing reliability roadmap without parallel contracts."}
+{"file":"docs/inkscape-mcp-plan.md","reason":"Primary product boundary for MCP tools and in-place SVG editing."}
+{"file":"docs/roadmap/phase-1-stabilize-foundations.md","reason":"Phase 1 Workstream 6 path editing reliability context."}

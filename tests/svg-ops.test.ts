@@ -1078,6 +1078,78 @@ describe("SVG operations", () => {
     });
   });
 
+  it("rotates selected path points around an explicit absolute origin", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 c2 0 6 0 10 0 L30 20",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "c1" },
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: {
+        type: "rotate",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 90,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 c0 2 6 0 0 10 L0 30",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 1, point: "c1" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [1, 2],
+      transform: {
+        type: "rotate",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 90,
+      },
+    });
+  });
+
+  it("rotates point-type-selected endpoints in path order", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 0 q2 0 8 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "point_type",
+        pointTypes: ["end"],
+      },
+      transform: {
+        type: "rotate",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 90,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 l0 5 q2 0 0 8",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 0, point: "end" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [0, 1, 2],
+    });
+  });
+
   it("transforms the nearest editable path point by absolute coordinates", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
