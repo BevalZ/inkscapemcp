@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index for final verification."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify no-write validation failure behavior."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify test coverage and runtime quality contracts."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Verify successful write logging remains compact."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify persistence remains workspace filesystem only."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Verify roadmap memory was updated with the new selector contract."}
+{"file":"docs/roadmap/phase-1-stabilize-foundations.md","reason":"Verify the implementation stays inside Phase 1 path editing reliability scope."}

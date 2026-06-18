@@ -306,6 +306,23 @@ const pathPointCommandSelectorSchema = z.object({
   }
 });
 
+const pathPointTypeSelectorSchema = z.object({
+  type: z.literal("point_type"),
+  pointTypes: z.array(z.enum(["end", "c1", "c2"])).min(1),
+}).superRefine((selector, ctx) => {
+  const seen = new Set<string>();
+  for (const pointType of selector.pointTypes) {
+    if (seen.has(pointType)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Path point type selector must not contain duplicates.",
+        path: ["pointTypes"],
+      });
+    }
+    seen.add(pointType);
+  }
+});
+
 const pathPointNearestSelectorSchema = z.object({
   type: z.literal("nearest"),
   x: z.number().finite(),
@@ -330,6 +347,7 @@ export const transformPathPointsSchema = z.object({
     pathPointSegmentRangeSelectorSchema,
     pathPointSegmentListSelectorSchema,
     pathPointCommandSelectorSchema,
+    pathPointTypeSelectorSchema,
     pathPointNearestSelectorSchema,
     pathPointRadiusSelectorSchema,
     explicitPathPointSelectorSchema,
@@ -370,6 +388,7 @@ export const transformPathPointsSchema = z.object({
     input.pointSelector.type === "segment_range" ||
     input.pointSelector.type === "segment_list" ||
     input.pointSelector.type === "command" ||
+    input.pointSelector.type === "point_type" ||
     input.pointSelector.type === "nearest" ||
     input.pointSelector.type === "radius"
   ) return;

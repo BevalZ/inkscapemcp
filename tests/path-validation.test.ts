@@ -497,6 +497,83 @@ describe("path tool validation", () => {
     });
   });
 
+  it("accepts point-type selectors and rejects invalid point-type inputs", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end", "c1"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "point_type",
+        pointTypes: ["end", "c1"],
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: [],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end", "end"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow("duplicates");
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["start"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+  });
+
+  it("defers point-type selector set-transform count validation until selector resolution", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["c1", "end"],
+        },
+        transform: { type: "set_absolute", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "point_type",
+      },
+      transform: {
+        type: "set_absolute",
+        points: [{ x: 1, y: 2 }],
+      },
+    });
+  });
+
   it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
     expect(
       transformPathPointsSchema.parse({

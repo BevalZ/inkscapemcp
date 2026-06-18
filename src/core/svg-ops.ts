@@ -137,6 +137,10 @@ export type PathPointSelector =
       pointTypes?: EditablePathPoint[];
     }
   | {
+      type: "point_type";
+      pointTypes: EditablePathPoint[];
+    }
+  | {
       type: "nearest";
       x: number;
       y: number;
@@ -630,6 +634,8 @@ function validateTransformPathPointsInput(input: {
     validatePathPointSegmentListSelector(input.pointSelector);
   } else if (input.pointSelector.type === "command") {
     validatePathPointCommandSelector(input.pointSelector);
+  } else if (input.pointSelector.type === "point_type") {
+    validatePathPointTypeSelector(input.pointSelector);
   } else if (input.pointSelector.type === "nearest") {
     validatePathPointNearestSelector(input.pointSelector);
   } else if (input.pointSelector.type === "radius") {
@@ -774,6 +780,21 @@ function validatePathPointCommandSelector(selector: Extract<PathPointSelector, {
   }
 }
 
+function validatePathPointTypeSelector(selector: Extract<PathPointSelector, { type: "point_type" }>): void {
+  if (selector.pointTypes.length === 0) {
+    throw new InkMcpError("INVALID_INPUT", "Path point type selector must not be empty.");
+  }
+  const pointTypes = new Set<EditablePathPoint>();
+  for (const pointType of selector.pointTypes) {
+    if (pointTypes.has(pointType)) {
+      throw new InkMcpError("INVALID_INPUT", "Path point type selector must not contain duplicates.", {
+        pointType,
+      });
+    }
+    pointTypes.add(pointType);
+  }
+}
+
 function validatePathPointNearestSelector(selector: Extract<PathPointSelector, { type: "nearest" }>): void {
   if (!Number.isFinite(selector.x) || !Number.isFinite(selector.y)) {
     throw new InkMcpError("INVALID_INPUT", "Path point nearest selector coordinates must be finite.", {
@@ -900,6 +921,21 @@ function resolvePathPointSelector(pathData: string, selector: PathPointSelector)
       throw new InkMcpError("INVALID_INPUT", "Path point command selector matched no editable points.", {
         commands: selector.commands,
         pointTypes: [...allowedPointTypes],
+      });
+    }
+    return selected;
+  }
+
+  if (selector.type === "point_type") {
+    const allowedPointTypes = new Set(selector.pointTypes);
+    for (const segment of segments) {
+      for (const point of segment.availablePoints) {
+        if (allowedPointTypes.has(point)) selected.push({ segmentIndex: segment.index, point });
+      }
+    }
+    if (selected.length === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point type selector matched no editable points.", {
+        pointTypes: selector.pointTypes,
       });
     }
     return selected;
