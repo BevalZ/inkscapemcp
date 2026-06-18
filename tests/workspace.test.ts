@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -287,6 +287,132 @@ describe("workspace", () => {
     await expect(readFile(workspace.documentPaths("recover-empty-doc").operationsLog, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("recovers from the newest successful write snapshot by strategy", async () => {
+    const svg = createSvgDocument({ title: "Recover write", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-write-doc", "Recover write", svg);
+    await replaceDocumentSvg(
+      {
+        docId: "recover-write-doc",
+        svg: svg.replace("</svg>", '<rect id="first-write" x="1" y="1" width="3" height="3"/></svg>'),
+        confirmFullDocumentReplacement: true,
+      },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    const beforeBadWrite = await workspace.readSvg("recover-write-doc");
+    await replaceDocumentSvg(
+      {
+        docId: "recover-write-doc",
+        svg: beforeBadWrite.replace("</svg>", '<circle id="bad-successful-write" cx="5" cy="5" r="3"/></svg>'),
+        confirmFullDocumentReplacement: true,
+      },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    const afterBadWrite = await workspace.readSvg("recover-write-doc");
+    expect(afterBadWrite).toContain("bad-successful-write");
+    const logBeforeRecovery = await readFile(workspace.documentPaths("recover-write-doc").operationsLog, "utf8");
+    const lastWriteSnapshotPath = logBeforeRecovery
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as { status?: string; snapshotPath?: string })
+      .filter((entry) => entry.status === "ok" && entry.snapshotPath)
+      .at(-1)?.snapshotPath;
+    expect(lastWriteSnapshotPath).toBeDefined();
+
+    const inkscape = new InkscapeCli();
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    const result = await recoverDocument(
+      { docId: "recover-write-doc", strategy: "last_successful_write", confirmDiscardGuiState: false },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(companion).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "recover-write-doc",
+      strategy: "last_successful_write",
+      restoredPath: lastWriteSnapshotPath,
+      preRecoverySnapshotPath: expect.stringContaining("recover_document"),
+    });
+    await expect(workspace.readSvg("recover-write-doc")).resolves.toBe(beforeBadWrite);
+    await expect(readFile(result.preRecoverySnapshotPath, "utf8")).resolves.toBe(afterBadWrite);
+
+    const log = await readFile(workspace.documentPaths("recover-write-doc").operationsLog, "utf8");
+    expect(log).toContain('"toolName":"recover_document"');
+    expect(log).toContain('"strategy":"last_successful_write"');
+    expect(log).toContain(`"snapshotId":"${result.recoveredFromSnapshotId}"`);
+  });
+
+  it("skips non-write, error, malformed, and unsafe operation-log entries for last-successful-write recovery", async () => {
+    const svg = createSvgDocument({ title: "Recover write skips", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-write-skip-doc", "Recover write skips", svg);
+    const paths = workspace.documentPaths("recover-write-skip-doc");
+    const knownGood = await createCheckpoint(
+      { docId: "recover-write-skip-doc", label: "Known good" },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("recover-write-skip-doc", "break_doc", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<rect id="bad-skip-write" x="1" y="1" width="3" height="3"/></svg>'),
+      result: {},
+    }));
+    const brokenSvg = await workspace.readSvg("recover-write-skip-doc");
+    expect(brokenSvg).toContain("bad-skip-write");
+    const unsafeSnapshotPath = path.join(root, "outside.svg");
+    await writeFile(paths.operationsLog, [
+      "{malformed",
+      JSON.stringify({ timestamp: "2026-06-19T00:00:00.000Z", toolName: "bad", status: "error", snapshotPath: knownGood.snapshotPath }),
+      JSON.stringify({ timestamp: "2026-06-19T00:00:01.000Z", toolName: "create_document", status: "ok" }),
+      JSON.stringify({ timestamp: "2026-06-19T00:00:02.000Z", toolName: "unsafe", status: "ok", snapshotPath: unsafeSnapshotPath }),
+      JSON.stringify({ timestamp: "2026-06-19T00:00:03.000Z", toolName: "manual", status: "ok", snapshotPath: knownGood.snapshotPath }),
+      "",
+    ].join("\n"), "utf8");
+
+    const result = await recoverDocument(
+      { docId: "recover-write-skip-doc", strategy: "last_successful_write", confirmDiscardGuiState: false },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      strategy: "last_successful_write",
+      recoveredFromSnapshotId: knownGood.snapshotId,
+      restoredPath: knownGood.snapshotPath,
+    });
+    await expect(workspace.readSvg("recover-write-skip-doc")).resolves.not.toContain("bad-skip-write");
+  });
+
+  it("rejects last-successful-write recovery when no recoverable write snapshot exists without side effects", async () => {
+    const svg = createSvgDocument({ title: "Recover no write", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-no-write-doc", "Recover no write", svg);
+    const paths = workspace.documentPaths("recover-no-write-doc");
+    const before = await workspace.readSvg("recover-no-write-doc");
+    await writeFile(paths.operationsLog, [
+      JSON.stringify({ timestamp: "2026-06-19T00:00:00.000Z", toolName: "create_document", status: "ok" }),
+      JSON.stringify({ timestamp: "2026-06-19T00:00:01.000Z", toolName: "failed_tool", status: "error", snapshotPath: path.join(paths.historyDir, "missing.svg") }),
+      "",
+    ].join("\n"), "utf8");
+    const inkscape = new InkscapeCli();
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      recoverDocument(
+        { docId: "recover-no-write-doc", strategy: "last_successful_write", confirmDiscardGuiState: false },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toMatchObject({ code: "DOC_NOT_FOUND" });
+
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.readSvg("recover-no-write-doc")).resolves.toBe(before);
+    await expect(workspace.listHistory("recover-no-write-doc")).resolves.toEqual([]);
+    const logAfter = await readFile(paths.operationsLog, "utf8");
+    expect(logAfter).not.toContain('"toolName":"recover_document"');
   });
 
   it("rejects missing and unsafe recovery snapshots without changing current SVG", async () => {

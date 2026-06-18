@@ -36,6 +36,17 @@ describe("path tool validation", () => {
       confirmDiscardGuiState: false,
     });
 
+    expect(
+      recoverDocumentSchema.parse({
+        docId: "recover-doc",
+        strategy: "last_successful_write",
+      }),
+    ).toMatchObject({
+      docId: "recover-doc",
+      strategy: "last_successful_write",
+      confirmDiscardGuiState: false,
+    });
+
     expect(() =>
       recoverDocumentSchema.parse({
         docId: "recover-doc",

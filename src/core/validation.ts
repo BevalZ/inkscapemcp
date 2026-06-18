@@ -710,7 +710,7 @@ export const rollbackDocumentSchema = z.object({
 export const recoverDocumentSchema = z.object({
   docId: docIdSchema,
   snapshotId: z.string().min(1).optional(),
-  strategy: z.enum(["last_snapshot"]).optional(),
+  strategy: z.enum(["last_snapshot", "last_successful_write"]).optional(),
   confirmDiscardGuiState: z.boolean().default(false),
 }).superRefine((input, ctx) => {
   if (input.snapshotId && input.strategy) {

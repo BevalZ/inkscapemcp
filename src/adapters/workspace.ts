@@ -42,6 +42,13 @@ export interface StoredMetadata {
 
 export type WorkspaceWriter = "mcp" | "gui" | "system";
 
+export interface RecoverableWriteSnapshot {
+  snapshotId: string;
+  snapshotPath: string;
+  toolName?: string;
+  timestamp?: string;
+}
+
 export interface ConnectionConfig {
   connectionId: string;
   docId: string;
@@ -672,6 +679,29 @@ export class Workspace {
     };
   }
 
+  async findLastSuccessfulWriteSnapshot(docId: string): Promise<RecoverableWriteSnapshot | undefined> {
+    const paths = this.documentPaths(docId);
+    await this.assertDocumentExists(paths);
+    const raw = await readFile(paths.operationsLog, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+      throw error;
+    });
+    const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const entry = parseOperationLogLine(lines[index]);
+      if (!entry || entry.status !== "ok" || typeof entry.snapshotPath !== "string") continue;
+      const snapshotId = this.snapshotIdFromDocumentHistoryPath(paths, entry.snapshotPath);
+      if (!snapshotId) continue;
+      return {
+        snapshotId,
+        snapshotPath: entry.snapshotPath,
+        ...(typeof entry.toolName === "string" ? { toolName: entry.toolName } : {}),
+        ...(typeof entry.timestamp === "string" ? { timestamp: entry.timestamp } : {}),
+      };
+    }
+    return undefined;
+  }
+
   async rollback(
     docId: string,
     snapshotId: string,
@@ -892,6 +922,15 @@ export class Workspace {
     return this.resolveWithinWorkspace("drawings", docId, "history", `${snapshotId}.svg`);
   }
 
+  private snapshotIdFromDocumentHistoryPath(paths: DocumentPaths, snapshotPath: string): string | undefined {
+    const absoluteSnapshotPath = path.resolve(snapshotPath);
+    const relative = path.relative(paths.historyDir, absoluteSnapshotPath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+    if (path.dirname(relative) !== ".") return undefined;
+    if (!relative.endsWith(".svg")) return undefined;
+    return path.basename(relative, ".svg");
+  }
+
   private async createOperationDiffArtifact(
     paths: DocumentPaths,
     toolName: string,
@@ -977,6 +1016,17 @@ export class Workspace {
 export function timestampId(date = new Date()): string {
   const stamp = date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   return `${stamp}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function parseOperationLogLine(line: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function checkpointToolName(label?: string): string {

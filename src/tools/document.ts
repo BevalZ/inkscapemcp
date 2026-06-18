@@ -930,7 +930,7 @@ export async function recoverDocument(input: z.infer<typeof recoverDocumentSchem
 async function resolveRecoverySnapshot(
   input: z.infer<typeof recoverDocumentSchema>,
   ctx: ToolContext,
-): Promise<{ snapshotId: string; strategy?: "last_snapshot" }> {
+): Promise<{ snapshotId: string; strategy?: "last_snapshot" | "last_successful_write" }> {
   if (input.snapshotId) {
     return { snapshotId: input.snapshotId };
   }
@@ -939,6 +939,15 @@ async function resolveRecoverySnapshot(
     const latest = latestHistorySnapshot(history);
     if (!latest) {
       throw new InkMcpError("DOC_NOT_FOUND", "No history snapshot is available for recovery.", {
+        strategy: input.strategy,
+      });
+    }
+    return { snapshotId: latest.snapshotId, strategy: input.strategy };
+  }
+  if (input.strategy === "last_successful_write") {
+    const latest = await ctx.workspace.findLastSuccessfulWriteSnapshot(input.docId);
+    if (!latest) {
+      throw new InkMcpError("DOC_NOT_FOUND", "No successful write snapshot is available for recovery.", {
         strategy: input.strategy,
       });
     }
