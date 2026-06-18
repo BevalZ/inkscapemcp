@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
+- **Total Sessions**: 18
 - **Last Active**: 2026-06-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~698 | Active |
+| `journal-1.md` | ~731 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-06-19 | Path node normalized query view | `37cc20f` | `main` |
 | 17 | 2026-06-19 | Resolved style query summaries | `35d6208` | `main` |
 | 16 | 2026-06-19 | Phase 1 Id Repair Proposal Loop | `3d763b9` | `main` |
 | 15 | 2026-06-19 | Phase 1 Apply Operation Preview Loop | `f6c84e9` | `main` |

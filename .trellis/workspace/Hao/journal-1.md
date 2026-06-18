@@ -696,3 +696,36 @@ Added query_document includeResolvedStyle for read-only presentation/inline styl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Path node normalized query view
+
+**Date**: 2026-06-19
+**Task**: Path node normalized query view
+**Branch**: `main`
+
+### Summary
+
+Added query_path_nodes normalize option with explicit absolute normalized segment output, compatibility-preserving defaults, tests, README docs, and Phase 1 loop 15 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `37cc20f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
