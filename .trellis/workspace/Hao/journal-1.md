@@ -1172,3 +1172,36 @@ Added Phase 1 transform_path_points scale transform with explicit SVG origin, fi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: Path Point Rotate Transform
+
+**Date**: 2026-06-19
+**Task**: Path Point Rotate Transform
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 transform_path_points rotate transform with explicit SVG origin, finite non-zero angle validation, absolute-coordinate mapping for relative and absolute path commands, tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3475ee4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
