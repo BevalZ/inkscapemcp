@@ -417,3 +417,37 @@ Completed Phase 1 Loop 6 by adding recover_document for explicit snapshot/checkp
 ### Next Steps
 
 - Continue Phase 1 recovery/replay foundation with stale-baseline dry-run or deterministic operation replay scaffolding.
+
+
+## Session 12: Phase 1 SVG Operations Dry-Run Loop
+
+**Date**: 2026-06-18
+**Task**: Phase 1 SVG Operations Dry-Run Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented preview_svg_operations as a read-only dry-run surface for controlled apply_svg_operations batches. The tool pre-pulls active bidirectional GUI state like other current-state read tools, applies operations only in memory, returns compact/full structured diffs from the shared diff engine, and does not write current.svg, metadata, history, operation logs, operation-diff artifacts, or trigger Inkscape refresh. Added focused tests for compact/full responses, invalid batches, stale-read warnings, and fresh GUI pre-pull behavior. Verified npm run typecheck, npm test, npm run build, python inkscape-extension/inksmcp_pull.py --self-test, and git diff --check. Remaining Phase 1 follow-ups include deterministic replay with stale baseline rejection, saved preview artifacts, operation groups, and id repair/merge hardening.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0ba481e` | (see git log) |
+| `eb9af5b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
