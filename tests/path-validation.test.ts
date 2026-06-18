@@ -221,6 +221,60 @@ describe("path tool validation", () => {
     ).toThrow("minX");
   });
 
+  it("accepts segment range point selectors and rejects invalid range bounds", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_range",
+          startSegmentIndex: 1,
+          endSegmentIndex: 3,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "segment_range",
+        startSegmentIndex: 1,
+        endSegmentIndex: 3,
+        pointTypes: ["end", "c1", "c2"],
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_range",
+          startSegmentIndex: 1,
+          endSegmentIndex: 2,
+          pointTypes: ["end"],
+        },
+        transform: { type: "set_absolute", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "segment_range",
+        pointTypes: ["end"],
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_range",
+          startSegmentIndex: 3,
+          endSegmentIndex: 1,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow("startSegmentIndex");
+  });
+
   it("accepts set_absolute and set_relative point transforms and rejects mismatched target counts", () => {
     expect(
       transformPathPointsSchema.parse({

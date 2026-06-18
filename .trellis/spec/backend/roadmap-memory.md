@@ -105,6 +105,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 19 extended `transform_path_points` with `set_absolute` for exact endpoint/control-handle placement after normalized path inspection. It keeps the existing explicit point-selection boundary, maps ordered absolute target coordinates back into absolute or relative segment storage as needed, rejects selection/target mismatches before snapshot/write, and preserves the same pre-pull, snapshot, diagnostics, log, and direct `d` sync contract as translate.
 - Phase 1 loop 20 extended `transform_path_points` with `set_relative` for segment-base-relative endpoint/control-handle placement. It complements raw and absolute path-node query views, stores targets directly on relative commands, maps targets to `base + target` for absolute commands, applies edits in path order, and preserves the same validation, snapshot, diagnostics, log, and direct `d` sync boundary as other point transforms.
 - Phase 1 loop 21 extended `transform_path_points.pointSelector` with `{ type: "bbox" }` selection over absolute path-node coordinates. It keeps legacy explicit `{ points }` selectors valid, selects edge-inclusive `end`/`c1`/`c2` points from one existing path, rejects invalid or empty bbox selections before snapshot/write, and reuses the existing translate, `set_absolute`, `set_relative`, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
+- Phase 1 loop 22 extended `transform_path_points.pointSelector` with `{ type: "segment_range" }` selection over inclusive path segment indexes. It keeps legacy explicit and bbox selectors valid, selects editable `end`/`c1`/`c2` points in path order, rejects invalid, out-of-range, or empty ranges before snapshot/write, and reuses the existing transform, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 
 ### 4. Validation & Error Matrix
 
@@ -1146,6 +1147,97 @@ await transformPathPoints({
 ```
 
 Use bbox selection when the caller knows an absolute SVG coordinate region but not every segment index. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
+
+## Scenario: Path Point Segment Range Selector Contract
+
+### 1. Scope / Trigger
+
+- Trigger: selecting all editable endpoint/control handles on contiguous path segments before applying `transform_path_points`.
+- Scope: one existing path element in one workspace document, using the existing `translate`, `set_absolute`, and `set_relative` transform variants.
+- Out of scope: multi-path selection, visual-length ranges, percentage ranges, GUI selection state, renderer hit testing, segment creation/deletion, and unsupported SVG path commands.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- Legacy explicit selector: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- Existing bbox selector: `{ type: "bbox", minX: number, minY: number, maxX: number, maxY: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- Segment range selector: `{ type: "segment_range", startSegmentIndex: number, endSegmentIndex: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- Segment range indexes are inclusive.
+- `pointTypes` defaults to `["end", "c1", "c2"]`.
+- Response includes resolved `selectedPointCount`, `selectedPoints`, `editedSegments`, `transform`, and `changed.d.from` / `changed.d.to`.
+
+### 3. Contracts
+
+- Segment indexes are the parsed segment indexes returned by `query_path_nodes` and `query_document({ includePathNodes: true })`.
+- Range selection is deterministic and path-order based; it must not read or depend on Inkscape GUI selection.
+- Within each selected segment, point order follows the existing parser's `availablePoints` order.
+- The selector resolves only editable points exposed by the current path parser: `end`, `c1`, and `c2` on supported `M`, `L`, `C`, `Q`, and `Z` path commands, including relative variants.
+- Legacy `{ points }` and `{ type: "bbox" }` callers remain valid.
+- After range resolution, transform behavior is identical to explicit selection. `set_absolute` and `set_relative` target counts must match the resolved selected point count.
+- Empty range matches fail before snapshot/write.
+- Successful writes preserve the target path element id and object tree, snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+- Failed validation, missing path data, unsupported commands, out-of-range selectors, or empty matches leave `current.svg`, history, operation logs, operation-diff artifacts, and Inkscape refresh untouched.
+
+### 4. Validation & Error Matrix
+
+- Negative or non-integer `startSegmentIndex` / `endSegmentIndex` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- `startSegmentIndex > endSegmentIndex` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Empty `pointTypes` -> schema validation failure, no pre-pull or write.
+- `endSegmentIndex` beyond parsed segment count -> `INVALID_INPUT`, no snapshot/write.
+- Range matches zero editable points, such as selecting only a `Z` segment with default point types -> `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- `set_absolute` or `set_relative` target count mismatch after range resolution -> `INVALID_INPUT`, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: select segments 3 through 6 of a contour and move all endpoints and first controls left in one transform.
+- Good: select only `end` points from an inclusive segment range and apply exact `set_absolute` targets in resolved path order.
+- Base: caller knows scattered non-contiguous points; use the legacy explicit `{ points }` selector.
+- Base: caller knows a visual coordinate region but not segment indexes; use the bbox selector.
+- Bad: using the current Inkscape GUI node selection to decide which range to edit.
+- Bad: replacing the whole SVG document because a contiguous path section needs one transform.
+
+### 6. Tests Required
+
+- Schema tests accept legacy explicit, bbox, and segment range selectors with defaulted `pointTypes`.
+- Schema tests reject negative, non-integer, inverted, or empty-`pointTypes` range inputs.
+- Core tests prove range selection uses inclusive segment indexes, path/point order, relative path commands, and resolved `selectedPoints`.
+- Core tests prove range `set_absolute` and `set_relative` reject target-count mismatches after selector resolution.
+- Core tests prove out-of-range and empty range selections throw before returning a mutated SVG.
+- Tool-level tests prove successful range transforms snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests prove empty range selections leave `current.svg` and history unchanged and do not call Inkscape sync/refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replacePathData({
+  docId,
+  elementId: "outline",
+  d: manuallyRegeneratedWholePath,
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "outline",
+  pointSelector: {
+    type: "segment_range",
+    startSegmentIndex: 3,
+    endSegmentIndex: 6,
+    pointTypes: ["end", "c1"],
+  },
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+Use segment range selection when the caller knows contiguous path segment indexes from `query_path_nodes`. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
 ## Phase Summary
 

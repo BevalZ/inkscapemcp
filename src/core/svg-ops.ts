@@ -119,6 +119,12 @@ export type PathPointSelector =
       maxX: number;
       maxY: number;
       pointTypes?: EditablePathPoint[];
+    }
+  | {
+      type: "segment_range";
+      startSegmentIndex: number;
+      endSegmentIndex: number;
+      pointTypes?: EditablePathPoint[];
     };
 
 export interface TransformPathPointsResult extends PathDataEditResult {
@@ -594,12 +600,14 @@ function validateTransformPathPointsInput(input: {
 }): void {
   if (input.pointSelector.type === "bbox") {
     validatePathPointBboxSelector(input.pointSelector);
+  } else if (input.pointSelector.type === "segment_range") {
+    validatePathPointSegmentRangeSelector(input.pointSelector);
   } else {
     validateExplicitPathPointSelector(input.pointSelector);
   }
 
   validatePathPointTransform(input.transform);
-  if (input.pointSelector.type !== "bbox" && input.transform.type !== "translate") {
+  if ((input.pointSelector.type === undefined || input.pointSelector.type === "points") && input.transform.type !== "translate") {
     validateResolvedPathPointTransform(input.pointSelector.points, input.transform);
   }
 }
@@ -671,36 +679,87 @@ function validatePathPointBboxSelector(selector: Extract<PathPointSelector, { ty
   }
 }
 
-function resolvePathPointSelector(pathData: string, selector: PathPointSelector): PathPointSelection[] {
-  if (selector.type !== "bbox") return selector.points;
-
-  const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
-  const selected: PathPointSelection[] = [];
-  for (const segment of describeEditablePathData(pathData)) {
-    for (const point of segment.availablePoints) {
-      if (!allowedPointTypes.has(point)) continue;
-      const absolutePoint = segment.absolutePoints[point];
-      if (!absolutePoint) continue;
-      if (
-        absolutePoint.x >= selector.minX &&
-        absolutePoint.x <= selector.maxX &&
-        absolutePoint.y >= selector.minY &&
-        absolutePoint.y <= selector.maxY
-      ) {
-        selected.push({ segmentIndex: segment.index, point });
-      }
-    }
-  }
-  if (selected.length === 0) {
-    throw new InkMcpError("INVALID_INPUT", "Path point bbox selector matched no editable points.", {
-      minX: selector.minX,
-      minY: selector.minY,
-      maxX: selector.maxX,
-      maxY: selector.maxY,
-      pointTypes: [...allowedPointTypes],
+function validatePathPointSegmentRangeSelector(
+  selector: Extract<PathPointSelector, { type: "segment_range" }>,
+): void {
+  if (
+    !Number.isInteger(selector.startSegmentIndex) ||
+    !Number.isInteger(selector.endSegmentIndex) ||
+    selector.startSegmentIndex < 0 ||
+    selector.endSegmentIndex < 0
+  ) {
+    throw new InkMcpError("INVALID_INPUT", "Path point segment range selector indexes must be non-negative integers.", {
+      startSegmentIndex: selector.startSegmentIndex,
+      endSegmentIndex: selector.endSegmentIndex,
     });
   }
-  return selected;
+  if (selector.startSegmentIndex > selector.endSegmentIndex) {
+    throw new InkMcpError("INVALID_INPUT", "Path point segment range selector bounds are invalid.", {
+      startSegmentIndex: selector.startSegmentIndex,
+      endSegmentIndex: selector.endSegmentIndex,
+    });
+  }
+}
+
+function resolvePathPointSelector(pathData: string, selector: PathPointSelector): PathPointSelection[] {
+  const selected: PathPointSelection[] = [];
+  const segments = describeEditablePathData(pathData);
+
+  if (selector.type === "bbox") {
+    const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+    for (const segment of segments) {
+      for (const point of segment.availablePoints) {
+        if (!allowedPointTypes.has(point)) continue;
+        const absolutePoint = segment.absolutePoints[point];
+        if (!absolutePoint) continue;
+        if (
+          absolutePoint.x >= selector.minX &&
+          absolutePoint.x <= selector.maxX &&
+          absolutePoint.y >= selector.minY &&
+          absolutePoint.y <= selector.maxY
+        ) {
+          selected.push({ segmentIndex: segment.index, point });
+        }
+      }
+    }
+    if (selected.length === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point bbox selector matched no editable points.", {
+        minX: selector.minX,
+        minY: selector.minY,
+        maxX: selector.maxX,
+        maxY: selector.maxY,
+        pointTypes: [...allowedPointTypes],
+      });
+    }
+    return selected;
+  }
+
+  if (selector.type === "segment_range") {
+    const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+    if (selector.endSegmentIndex >= segments.length) {
+      throw new InkMcpError("INVALID_INPUT", "Path point segment range selector is out of range.", {
+        startSegmentIndex: selector.startSegmentIndex,
+        endSegmentIndex: selector.endSegmentIndex,
+        segmentCount: segments.length,
+      });
+    }
+    for (const segment of segments) {
+      if (segment.index < selector.startSegmentIndex || segment.index > selector.endSegmentIndex) continue;
+      for (const point of segment.availablePoints) {
+        if (allowedPointTypes.has(point)) selected.push({ segmentIndex: segment.index, point });
+      }
+    }
+    if (selected.length === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point segment range selector matched no editable points.", {
+        startSegmentIndex: selector.startSegmentIndex,
+        endSegmentIndex: selector.endSegmentIndex,
+        pointTypes: [...allowedPointTypes],
+      });
+    }
+    return selected;
+  }
+
+  return selector.points;
 }
 
 function pathPointTransformEdits(points: PathPointSelection[], transform: PathPointTransform): PathNodeEdit[] {

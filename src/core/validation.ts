@@ -253,10 +253,29 @@ const pathPointBboxSelectorSchema = z.object({
   }
 });
 
+const pathPointSegmentRangeSelectorSchema = z.object({
+  type: z.literal("segment_range"),
+  startSegmentIndex: z.number().int().nonnegative(),
+  endSegmentIndex: z.number().int().nonnegative(),
+  pointTypes: z.array(z.enum(["end", "c1", "c2"])).min(1).default(["end", "c1", "c2"]),
+}).superRefine((selector, ctx) => {
+  if (selector.startSegmentIndex > selector.endSegmentIndex) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Path point segment range selector startSegmentIndex must be less than or equal to endSegmentIndex.",
+      path: ["startSegmentIndex"],
+    });
+  }
+});
+
 export const transformPathPointsSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
-  pointSelector: z.union([pathPointBboxSelectorSchema, explicitPathPointSelectorSchema]),
+  pointSelector: z.union([
+    pathPointBboxSelectorSchema,
+    pathPointSegmentRangeSelectorSchema,
+    explicitPathPointSelectorSchema,
+  ]),
   transform: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("translate"),
@@ -288,7 +307,7 @@ export const transformPathPointsSchema = z.object({
   }),
 }).superRefine((input, ctx) => {
   if (input.transform.type !== "set_absolute" && input.transform.type !== "set_relative") return;
-  if (input.pointSelector.type === "bbox") return;
+  if (input.pointSelector.type === "bbox" || input.pointSelector.type === "segment_range") return;
   if (input.transform.points.length !== input.pointSelector.points.length) {
     ctx.addIssue({
       code: "custom",

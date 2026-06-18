@@ -544,6 +544,114 @@ describe("SVG operations", () => {
     ).toThrow("matched no editable points");
   });
 
+  it("transforms segment-range-selected path points in path order", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "segment_range",
+        startSegmentIndex: 1,
+        endSegmentIndex: 3,
+        pointTypes: ["end", "c1"],
+      },
+      transform: { type: "translate", dx: 1, dy: -2 },
+    });
+
+    expect(result.result).toMatchObject({
+      elementId: "editable-path",
+      previousD: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z",
+      nextD: "M10 10 l6 -1 c3 1 4 5 7 5 q2 -4 4 -2 z",
+      selectedPointCount: 5,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "c1" },
+        { segmentIndex: 2, point: "end" },
+        { segmentIndex: 3, point: "c1" },
+        { segmentIndex: 3, point: "end" },
+      ],
+      editedSegments: [1, 2, 3],
+    });
+  });
+
+  it("applies set_relative to segment-range-selected points when target counts match", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 C20 20 21 21 22 22",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "segment_range",
+        startSegmentIndex: 1,
+        endSegmentIndex: 2,
+        pointTypes: ["end"],
+      },
+      transform: {
+        type: "set_relative",
+        points: [
+          { x: 8, y: 9 },
+          { x: 11, y: 12 },
+        ],
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 l8 9 C20 20 21 21 29 31",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+    });
+  });
+
+  it("rejects segment range selectors that match no editable points", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2 Z",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          type: "segment_range",
+          startSegmentIndex: 2,
+          endSegmentIndex: 2,
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("matched no editable points");
+  });
+
+  it("rejects segment range selectors that exceed the path segment count", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          type: "segment_range",
+          startSegmentIndex: 1,
+          endSegmentIndex: 3,
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("out of range");
+  });
+
   it("rejects set_absolute when target point count does not match the selection", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
