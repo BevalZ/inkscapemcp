@@ -66,6 +66,7 @@ it("rejects script tags in raw SVG fragments", () => {
 - Runtime command: `node dist/server.js`.
 - MCP tools:
   - `create_document`
+  - `import_svg_document`
   - `add_element`
   - `apply_svg_operations`
   - `update_element`
@@ -75,6 +76,7 @@ it("rejects script tags in raw SVG fragments", () => {
   - `query_document`
   - `render_preview`
   - `export_document`
+  - `export_document_external`
   - `open_in_inkscape`
   - `list_history`
   - `rollback_document`
@@ -116,6 +118,7 @@ it("rejects script tags in raw SVG fragments", () => {
 - Good: `create_document` with safe `docId`, explicit canvas size, then `render_preview` produces a PNG path under the document directory.
 - Base: Inkscape is unavailable; server still starts, and Inkscape-dependent tools return `INKSCAPE_UNAVAILABLE`.
 - Bad: raw fragment includes `onclick` or `href="https://..."`; do not write `current.svg`.
+- Bad: external SVG editing tries to mutate the original source path; import a workspace copy first.
 
 ### 6. Tests Required
 
@@ -175,6 +178,9 @@ Do not set `tsconfig.json` `rootDir` to `.` for runtime builds in this project. 
 
 - `import_font` copies local `.ttf`, `.otf`, `.woff`, or `.woff2` files into `workspace/fonts/`.
 - `import_font` returns `fontPath`, byte count, and a warning that fonts are not embedded.
+- `vectorize_bitmap` may call only allowlisted local vectorizer binaries (`vtracer` or `potrace`) discovered from `VTRACER_BIN`, `POTRACE_BIN`, or `PATH`.
+- `vectorize_bitmap` writes a separate SVG artifact and optional render-diff report. It must not automatically replace or insert artwork into the current document.
+- PNG render-diff metrics may include MAE, RMSE, and exact pixel match ratio when both PNGs are comparable. Unsupported PNGs must return an explicit non-comparable reason.
 - Geometry tools execute Inkscape against workspace temporary files and only replace `current.svg` after the exported SVG parses and passes safety validation.
 - Geometry tools must select explicit element ids through action strings such as `select-by-id:id1,id2`; they must not depend on GUI selection state.
 - `autoConvertToPath` defaults to `true`.
@@ -205,6 +211,7 @@ Do not set `tsconfig.json` `rootDir` to `.` for runtime builds in this project. 
 - Geometry helpers reject missing ids and `resultId` conflicts.
 - Geometry finalization ignores Inkscape metadata nodes such as `defs` and `sodipodi:namedview`.
 - Inkscape integration runs at least one path geometry operation when the binary is available.
+- Vectorization tests cover allowlisted vectorizer invocation, unsupported source rejection, and PNG diff metrics without requiring a real vectorizer binary.
 - Resource tests list/read current SVG and preview PNG resources.
 - MCP stdio smoke verifies the Phase 2 tool count and resource read behavior.
 
@@ -270,12 +277,14 @@ Only values from the allowlist may reach Inkscape. Geometry-specific tools shoul
 - Path data tools accept either raw SVG `d` strings or structured segment arrays. Structured segment arrays currently support `M`, `L`, `C`, `Q`, and `Z`. Raw path data must be validated for command/parameter shape before save.
 - `edit_path_nodes` applies compact edits to an existing path's `d` attribute. It may move endpoints/control points, insert structured `M`/`L`/`C`/`Q`/`Z` segments, or delete segments. It should reject path data that cannot be safely round-tripped through the supported command set, such as arcs or shorthand curves.
 - `query_path_nodes` is read-only. It returns segment indexes, command names, raw point values, absolute point positions, and available point names for the same supported command set used by `edit_path_nodes`. It must not create snapshots, write operation logs, or trigger Inkscape refresh.
+- `query_document` semantic fingerprints are read-only. `includeFingerprints` and `matchElementFingerprint` may expose type, ancestry, sibling position, attribute/style hashes, geometry/path hashes, text hash, approximate bounding boxes, and ranked match candidates. These helpers must not rewrite ids, mutate SVG, create snapshots, or auto-merge objects.
 - Automatic refresh for existing-object attribute updates should prefer direct active-window attribute sync with Inkscape actions of the form `select-by-id:<id>;object-set-attribute:<name>,<value>`. This applies to `update_element`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, attribute-only `apply_svg_operations`, and direct attribute changes reported by `replace_attribute_values`.
 - Direct active-window attribute sync must only represent attribute setting on existing ids. It must not be used for add/delete/insert operations, text content changes, attribute removal, full-document replacement, or style declaration edits that cannot be mapped back to a single `object-set-attribute` call.
 - Structural automatic GUI refresh should invoke the companion extension after a successful save by default, including on Windows. The extension pulls the workspace SVG into the current window without opening another GUI window. If refresh fails or times out, return a warning and keep `current.svg` authoritative.
 - `refresh_in_inkscape` should trigger the installed companion extension action `dev.hydens.inksmcp.pull-workspace-document.noprefs` by default.
 - `refresh_in_inkscape` must not run Inkscape active-window `file-rebase` by default. On Windows with Inkscape 1.4.x, that action can crash inside `SPDocument::rebase`. Only run it when `allowUnstableRebase: true`.
 - MCP write tools may attempt automatic same-window refresh after a successful save when the server context enables auto-refresh. Failures must be returned as warnings and must not roll back the SVG write.
+- `diagnose_inkscape_gui` is read-only. It may inspect the Inkscape binary, user data directory, extension directory, and installed InkSMCP extension files. It must not mutate SVG, run mouse/keyboard automation, or become the primary refresh path.
 
 ### 4. Validation & Error Matrix
 
@@ -301,6 +310,29 @@ Only values from the allowlist may reach Inkscape. Geometry-specific tools shoul
 - Bad: user asks to tweak color/position/text and the agent calls `replace_document_svg` with a generated full SVG.
 - Bad: agent calls active-window `file-rebase` by default after every edit.
 
+## Scenario: Controlled External Import And Export
+
+### 1. Scope / Trigger
+
+- Trigger: importing local SVG files into the workspace, or exporting workspace documents to an explicit local directory.
+- Scope: `import_svg_document` and `export_document_external`.
+- Out of scope: remote downloads, arbitrary original-file mutation, and directory synchronization.
+
+### 2. Contracts
+
+- `import_svg_document({ sourcePath, docId?, title? })` accepts only local `.svg` files.
+- Imported SVG files are parsed and safety-filtered through the normal full-SVG validation path before becoming `workspace/drawings/{docId}/current.svg`.
+- Imported files become workspace copies. Future edit tools mutate the workspace copy, not the original source file.
+- `export_document_external({ docId, format, outputDirectory, filename?, ... })` writes only to an explicit local output directory supplied by the caller.
+- External export filenames must be safe-normalized in the same way as workspace export filenames.
+- Remote URLs, `file:` URIs, and UNC paths are invalid for controlled import/export boundaries.
+
+### 3. Tests Required
+
+- Local SVG import creates a workspace document copy and leaves the source path separate.
+- Import rejects remote/URI/UNC and non-SVG sources.
+- External export writes to the requested local directory with a safe filename.
+
 ### 6. Tests Required
 
 - Unit test that `replace_attribute_values` updates existing attributes/style while preserving geometry and ids.
@@ -312,6 +344,7 @@ Only values from the allowlist may reach Inkscape. Geometry-specific tools shoul
 - Unit and tool-level tests that `edit_path_nodes` edits supported path segments, rejects unsupported commands, and uses direct active-window attribute sync for `d`.
 - Unit and tool-level tests that `query_path_nodes` returns editable segment indexes and does not write or refresh.
 - Tool-level test that write tools attach auto-refresh warnings without failing the successful write.
+- Tool-level test that `diagnose_inkscape_gui` reports GUI integration state without mutating SVG.
 - Packaging test that the Inkscape companion extension declares the expected `.inx` command and passes safe path-resolution self-test.
 
 ### 7. Wrong vs Correct
@@ -400,9 +433,12 @@ await replaceDocumentSvg({
 ### 2. Signatures
 
 - Tools:
-  - `connect_inkscape_window({ docId, syncMode, connectionId?, documentPath?, inferredDocId?, runtimeDocumentId?, timeoutMs? })`
+  - `connect_inkscape_window({ docId, syncMode, connectionId?, documentPath?, inferredDocId?, runtimeDocumentId?, windowId?, timeoutMs? })`
   - `disconnect_inkscape_window({ docId?, connectionId? })`
-  - `pull_gui_state({ docId, connectionId?, conflictPolicy?, timeoutMs? })`
+  - `pull_gui_state({ docId, connectionId?, conflictPolicy?: "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping", timeoutMs? })`
+  - `start_gui_sync_polling({ docId, connectionId?, intervalMs?, timeoutMs? })`
+  - `stop_gui_sync_polling({ docId?, connectionId? })`
+  - `get_gui_sync_status({ docId?, connectionId? })`
 - Workspace files:
   - `workspace/connections/{connectionId}.json`
   - `workspace/gui-pull/{requestId}.svg`
@@ -417,20 +453,26 @@ await replaceDocumentSvg({
 
 - Default behavior remains workspace-only unless a connected document uses `syncMode: "bidirectional"`.
 - `connectionId` must be present in both the workspace connection sidecar and the SVG metadata marker.
+- `windowId` and `runtimeDocumentId` are optional but identity-bearing when present. The connection sidecar, SVG marker, extension config, and GUI pull manifest must preserve and validate them.
 - The SVG metadata marker is workflow metadata: preserve it in `current.svg` and history, strip it from `export_document` by default, and preserve it only with `includeInkMcpMetadata: true`.
 - `pull_gui_state` must trigger the companion extension push action, validate manifest identity, validate the SVG marker identity, parse and safety-filter the pulled SVG, detect revision/hash conflicts, snapshot before write, update metadata, update `lastSeenAt`, and return `idDiff`.
+- `pull_gui_state` conflicts must include a structured `conflictReport` with baseline metadata, current workspace metadata, GUI candidate hash, id diff, and policy suggestions.
+- `conflictPolicy: "merge_non_overlapping"` may perform a conservative three-way SVG merge only when element ids changed on one side relative to the saved connection baseline. Overlapping element changes, reparenting, missing parents, and concurrent adds with the same id must reject with merge conflict details.
 - `pull_gui_state` must not refresh Inkscape after writing, because the GUI state was the source.
 - Current-state write tools must pre-pull for active bidirectional documents and fail before writing if pre-pull fails.
 - Current-state query tools must pre-pull by default. `allowStaleRead: true` may return stale workspace output with a warning. Write tools must not expose `skipPrePull`.
 - `render_preview` and `export_document` may use stale workspace output with a warning when pre-pull fails.
 - `rollback_document` must reject when bidirectional sync is active unless `confirmDiscardGuiState: true`.
 - Ambiguous active bidirectional connections for the same `docId` must reject; never guess based on the active window alone.
+- Explicit polling is allowed only through `start_gui_sync_polling`; it is disabled by default, prevents overlapping pulls per connection, and records background errors in `get_gui_sync_status`.
 
 ### 4. Validation & Error Matrix
 
 - Missing connection -> `SYNC_NOT_CONNECTED`.
 - Manifest or SVG marker mismatch -> `SYNC_IDENTITY_MISMATCH`.
+- Manifest or SVG marker `windowId` / `runtimeDocumentId` mismatch when a connection supplied that identity -> `SYNC_IDENTITY_MISMATCH`.
 - Workspace revision/hash changed since connection baseline and `conflictPolicy: "reject"` -> `SYNC_CONFLICT`.
+- Workspace revision/hash changed since connection baseline and `conflictPolicy: "merge_non_overlapping"` with overlapping element changes -> `SYNC_CONFLICT` with merge details.
 - Pre-pull failure before a write -> fail the write and leave `current.svg` unchanged.
 - Pre-pull failure before stale-tolerant output -> return a warning and use the existing workspace file.
 

@@ -10,6 +10,8 @@
             <param name="connection_id" type="string" gui-hidden="true"></param>
             <param name="request_id" type="string" gui-hidden="true"></param>
             <param name="sync_mode" type="string" gui-hidden="true">bidirectional</param>
+            <param name="runtime_document_id" type="string" gui-hidden="true"></param>
+            <param name="window_id" type="string" gui-hidden="true"></param>
         </page>
     </param>
     <effect>

@@ -45,6 +45,7 @@ export interface ConnectionConfig {
   documentPath?: string;
   inferredDocId?: string;
   runtimeDocumentId?: string;
+  windowId?: string;
   createdAt: string;
   updatedAt: string;
   lastSeenAt: string;
@@ -62,6 +63,7 @@ export interface GuiPullManifest {
   inferredDocId?: string;
   documentPath?: string;
   runtimeDocumentId?: string;
+  windowId?: string;
   inkscapeVersion?: string;
   exportedAt: string;
   svgPath?: string;
@@ -119,8 +121,27 @@ export class Workspace {
     return this.resolveWithinWorkspace("drawings", assertSafeDocId(docId), safeName);
   }
 
+  externalExportPath(outputDirectory: string, filename: string): string {
+    if (isRemoteUriOrUnc(outputDirectory)) {
+      throw new InkMcpError("INVALID_INPUT", "External export directory must be a local filesystem path.");
+    }
+    const safeName = filename.replace(/[^A-Za-z0-9_.-]+/g, "-");
+    if (!safeName || safeName === "." || safeName === "..") {
+      throw new InkMcpError("INVALID_INPUT", "Invalid output filename.", { filename });
+    }
+    return path.join(path.resolve(outputDirectory), safeName);
+  }
+
   previewPath(docId: string): string {
     return this.resolveWithinWorkspace("drawings", assertSafeDocId(docId), "preview.png");
+  }
+
+  vectorizedPath(docId: string, filename: string): string {
+    const safeName = filename.replace(/[^A-Za-z0-9_.-]+/g, "-");
+    if (!safeName || safeName === "." || safeName === "..") {
+      throw new InkMcpError("INVALID_INPUT", "Invalid vectorized output filename.", { filename });
+    }
+    return this.resolveWithinWorkspace("drawings", assertSafeDocId(docId), "vectorized", safeName);
   }
 
   tempPath(docId: string, filename: string): string {
@@ -133,6 +154,10 @@ export class Workspace {
 
   connectionPath(connectionId: string): string {
     return this.resolveWithinWorkspace("connections", `${assertSafeConnectionId(connectionId)}.json`);
+  }
+
+  connectionBaselineSvgPath(connectionId: string): string {
+    return this.resolveWithinWorkspace("connections", `${assertSafeConnectionId(connectionId)}.baseline.svg`);
   }
 
   guiPullSvgPath(requestId: string): string {
@@ -152,7 +177,7 @@ export class Workspace {
   }
 
   async importFont(sourcePath: string, preferredName?: string): Promise<{ fontPath: string; bytes: number }> {
-    if (/^(?:https?|ftp|file):/i.test(sourcePath) || /^(?:\/\/|\\\\)/.test(sourcePath.trim())) {
+    if (isRemoteUriOrUnc(sourcePath)) {
       throw new InkMcpError("INVALID_INPUT", "Remote, URI, and UNC font sources are not allowed.");
     }
     const absoluteSource = path.resolve(sourcePath);
@@ -171,6 +196,24 @@ export class Workspace {
     const target = this.fontPath(`${path.basename(baseName, path.extname(baseName))}-${timestampId()}${extension}`);
     await copyFile(absoluteSource, target);
     return { fontPath: target, bytes: sourceInfo.size };
+  }
+
+  async importSvgDocument(sourcePath: string, docId: string, title: string): Promise<DocumentPaths> {
+    if (isRemoteUriOrUnc(sourcePath)) {
+      throw new InkMcpError("INVALID_INPUT", "Remote, URI, and UNC SVG sources are not allowed.");
+    }
+    const absoluteSource = path.resolve(sourcePath);
+    if (path.extname(absoluteSource).toLowerCase() !== ".svg") {
+      throw new InkMcpError("INVALID_INPUT", "Imported document must be an .svg file.", { sourcePath });
+    }
+    const sourceInfo = await stat(absoluteSource).catch(() => {
+      throw new InkMcpError("INVALID_INPUT", "SVG source was not found.", { sourcePath });
+    });
+    if (!sourceInfo.isFile()) {
+      throw new InkMcpError("INVALID_INPUT", "SVG source must be a file.", { sourcePath });
+    }
+    const svg = await readFile(absoluteSource, "utf8");
+    return this.createDocument(docId, title, svg);
   }
 
   async listDocuments(): Promise<string[]> {
@@ -242,7 +285,7 @@ export class Workspace {
     docId: string,
     toolName: string,
     expectedBase: { revision: number; contentHash: string },
-    conflictPolicy: "reject" | "prefer_gui" | "prefer_workspace",
+    conflictPolicy: "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping",
     nextSvg: string,
     result: T,
   ): Promise<{ paths: DocumentPaths; snapshotPath: string; result: T; wrote: boolean }> {
@@ -324,6 +367,24 @@ export class Workspace {
   async writeConnection(config: ConnectionConfig): Promise<void> {
     await this.ensureReady();
     await this.atomicWrite(this.connectionPath(config.connectionId), `${JSON.stringify(config, null, 2)}\n`);
+  }
+
+  async writeConnectionBaselineSvg(connectionId: string, svg: string): Promise<void> {
+    await this.ensureReady();
+    parseFullSvg(svg);
+    await this.atomicWrite(this.connectionBaselineSvgPath(connectionId), svg);
+  }
+
+  async readConnectionBaselineSvg(connectionId: string): Promise<string> {
+    await this.ensureReady();
+    return readFile(this.connectionBaselineSvgPath(connectionId), "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new InkMcpError("SYNC_CONFLICT", "Connection baseline SVG was not found; reconnect before automatic merge.", {
+          connectionId,
+        });
+      }
+      throw error;
+    });
   }
 
   async readConnection(connectionId: string): Promise<ConnectionConfig> {
@@ -511,4 +572,8 @@ function assertSafeRequestId(requestId: string): string {
     throw new InkMcpError("INVALID_INPUT", "Invalid GUI pull request id.", { requestId });
   }
   return requestId;
+}
+
+function isRemoteUriOrUnc(inputPath: string): boolean {
+  return /^(?:https?|ftp|file):/i.test(inputPath) || /^(?:\/\/|\\\\)/.test(inputPath.trim());
 }

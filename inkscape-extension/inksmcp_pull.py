@@ -154,6 +154,8 @@ def ensure_connection_marker(
     sync_mode: str,
     document_path: str | None,
     inferred_doc_id: str | None,
+    runtime_document_id: str | None = None,
+    window_id: str | None = None,
 ) -> None:
     marker = None
     for element in root.iter():
@@ -166,6 +168,8 @@ def ensure_connection_marker(
         "syncMode": sync_mode,
         "documentPath": document_path,
         "inferredDocId": inferred_doc_id,
+        "runtimeDocumentId": runtime_document_id,
+        "windowId": window_id,
         "updatedAt": iso_now(),
     }
     if marker is None:
@@ -279,6 +283,8 @@ def write_gui_pull_manifest(
     inferred_doc_id: str | None,
     document_path: str | None,
     svg_path: Path,
+    runtime_document_id: str | None = None,
+    window_id: str | None = None,
 ) -> None:
     manifest = {
         "requestId": request_id,
@@ -286,6 +292,8 @@ def write_gui_pull_manifest(
         "requestedDocId": requested_doc_id,
         "inferredDocId": inferred_doc_id,
         "documentPath": document_path,
+        "runtimeDocumentId": runtime_document_id,
+        "windowId": window_id,
         "inkscapeVersion": os.environ.get("INKSCAPE_VERSION", ""),
         "exportedAt": iso_now(),
         "svgPath": str(svg_path),
@@ -378,7 +386,16 @@ def run_self_test() -> None:
         assert push_request_id == request_id
 
         marked = ElementTree.fromstring('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
-        ensure_connection_marker(marked, "conn-abcdefgh", "fish-test", "bidirectional", str(svg_path), "fish-test")
+        ensure_connection_marker(
+            marked,
+            "conn-abcdefgh",
+            "fish-test",
+            "bidirectional",
+            str(svg_path),
+            "fish-test",
+            "runtime-1",
+            "window-1",
+        )
         validate_connection_marker(marked, "conn-abcdefgh", "fish-test")
         pushed_svg_path = workspace / "gui-pull" / "self-test-write.svg"
         write_svg_tree(pushed_svg_path, marked)
@@ -409,11 +426,18 @@ def run_inkex_extension() -> None:
             pars.add_argument("--connection_id", default="")
             pars.add_argument("--request_id", default="")
             pars.add_argument("--sync_mode", default="display_only")
+            pars.add_argument("--runtime_document_id", default="")
+            pars.add_argument("--window_id", default="")
 
         def effect(self) -> None:
             document_path = os.environ.get("DOCUMENT_PATH")
             input_file = self.options.input_file if isinstance(self.options.input_file, str) else None
             if self.options.action == "push":
+                config = load_config()
+                runtime_document_id = (
+                    self.options.runtime_document_id or config.get("runtimeDocumentId") or ""
+                ).strip() or None
+                window_id = (self.options.window_id or config.get("windowId") or "").strip() or None
                 doc_id, inferred_doc_id, workspace_root, connection_id, request_id, svg_path, manifest_path = resolve_push_request(
                     self.options.doc_id,
                     self.options.workspace_root,
@@ -431,6 +455,8 @@ def run_inkex_extension() -> None:
                     self.options.sync_mode,
                     document_path or input_file,
                     inferred_doc_id,
+                    runtime_document_id,
+                    window_id,
                 )
                 write_svg_tree(svg_path, root)
                 write_gui_pull_manifest(
@@ -441,6 +467,8 @@ def run_inkex_extension() -> None:
                     inferred_doc_id,
                     document_path or input_file,
                     svg_path,
+                    runtime_document_id,
+                    window_id,
                 )
                 self.svg = root
                 inkex.errormsg(f"Pushed InkSMCP GUI state for '{doc_id}' to {workspace_root}")

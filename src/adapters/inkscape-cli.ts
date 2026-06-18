@@ -39,6 +39,8 @@ export interface CompanionGuiPullOptions extends InkscapeRunOptions {
   connectionId: string;
   requestId: string;
   syncMode: "display_only" | "bidirectional";
+  runtimeDocumentId?: string;
+  windowId?: string;
 }
 
 export interface DirectAttributeUpdate {
@@ -54,6 +56,16 @@ export interface DirectAttributeSyncOptions extends InkscapeRunOptions {
 export interface ActionExportOptions extends InkscapeRunOptions {
   actions: string[];
   outputPath: string;
+}
+
+export interface InkscapeGuiDiagnostics {
+  binaryAvailable: boolean;
+  binaryPath?: string;
+  userDataDirectory?: string;
+  extensionDirectory?: string;
+  companionExtensionInstalled?: boolean;
+  pushExtensionInstalled?: boolean;
+  warnings: Array<{ code: string; message: string; details?: Record<string, unknown> }>;
 }
 
 export const companionRefreshAction = "dev.hydens.inksmcp.pull-workspace-document.noprefs";
@@ -167,6 +179,8 @@ export class InkscapeCli {
       connectionId: options.connectionId,
       requestId: options.requestId,
       syncMode: options.syncMode,
+      runtimeDocumentId: options.runtimeDocumentId,
+      windowId: options.windowId,
     });
     return this.run([`--actions=active-window-start;${companionPushGuiStateAction};active-window-end`], options);
   }
@@ -174,6 +188,60 @@ export class InkscapeCli {
   async runActionsToSvg(inputSvgPath: string, options: ActionExportOptions): Promise<InkscapeResult> {
     const actionText = [...options.actions, `export-filename:${options.outputPath}`, "export-do"].join(";");
     return this.run([inputSvgPath, `--actions=${actionText}`], options);
+  }
+
+  async diagnoseGui(options: InkscapeRunOptions = {}): Promise<InkscapeGuiDiagnostics> {
+    const binary = await this.discover();
+    if (!binary) {
+      return {
+        binaryAvailable: false,
+        warnings: [
+          {
+            code: "INKSCAPE_UNAVAILABLE",
+            message: "Inkscape binary was not found.",
+          },
+        ],
+      };
+    }
+    const warnings: InkscapeGuiDiagnostics["warnings"] = [];
+    let userDataDirectory: string | undefined;
+    let extensionDirectory: string | undefined;
+    let companionExtensionInstalled = false;
+    let pushExtensionInstalled = false;
+    try {
+      userDataDirectory = await this.userDataDirectoryWithTimeout(options.timeoutMs);
+      extensionDirectory = path.join(userDataDirectory, "extensions");
+      companionExtensionInstalled = await fileExists(path.join(extensionDirectory, "inksmcp_pull.inx"));
+      pushExtensionInstalled = await fileExists(path.join(extensionDirectory, "inksmcp_push_gui_state.inx"));
+      if (!companionExtensionInstalled || !pushExtensionInstalled) {
+        warnings.push({
+          code: "INKSMCP_EXTENSION_MISSING",
+          message: "InkSMCP companion extension files were not found in the Inkscape user extensions directory.",
+          details: { extensionDirectory },
+        });
+      }
+    } catch (error) {
+      warnings.push({
+        code: "INKSCAPE_DIAGNOSTIC_FAILED",
+        message: "Could not inspect Inkscape GUI extension state.",
+        details: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    if (process.platform === "win32") {
+      warnings.push({
+        code: "WINDOWS_FILE_REBASE_UNSTABLE",
+        message: "Active-window file-rebase remains diagnostic-only on Windows because it can crash Inkscape 1.4.x.",
+      });
+    }
+    return {
+      binaryAvailable: true,
+      binaryPath: binary,
+      userDataDirectory,
+      extensionDirectory,
+      companionExtensionInstalled,
+      pushExtensionInstalled,
+      warnings,
+    };
   }
 
   private async runExport(inputSvgPath: string, outputPath: string, options: ExportOptions): Promise<InkscapeResult> {
@@ -264,6 +332,8 @@ export class InkscapeCli {
     connectionId?: string;
     requestId?: string;
     syncMode?: "display_only" | "bidirectional";
+    runtimeDocumentId?: string;
+    windowId?: string;
   }): Promise<void> {
     const userDataDir = await this.userDataDirectory();
     const extensionDir = path.join(userDataDir, "extensions");
@@ -277,6 +347,8 @@ export class InkscapeCli {
           ...(config.connectionId ? { connectionId: config.connectionId } : {}),
           ...(config.requestId ? { requestId: config.requestId } : {}),
           ...(config.syncMode ? { syncMode: config.syncMode } : {}),
+          ...(config.runtimeDocumentId ? { runtimeDocumentId: config.runtimeDocumentId } : {}),
+          ...(config.windowId ? { windowId: config.windowId } : {}),
         },
         null,
         2,
@@ -286,7 +358,11 @@ export class InkscapeCli {
   }
 
   private async userDataDirectory(): Promise<string> {
-    const result = await this.run(["--user-data-directory"], { timeoutMs: 15_000 });
+    return this.userDataDirectoryWithTimeout(15_000);
+  }
+
+  private async userDataDirectoryWithTimeout(timeoutMs?: number): Promise<string> {
+    const result = await this.run(["--user-data-directory"], { timeoutMs: timeoutMs ?? 15_000 });
     const directory = result.stdout.trim().split(/\r?\n/)[0]?.trim();
     if (!directory) {
       throw new InkMcpError("INKSCAPE_FAILED", "Could not discover Inkscape user data directory.");

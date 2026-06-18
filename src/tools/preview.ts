@@ -2,7 +2,14 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as z from "zod/v4";
 
-import { exportDocumentSchema, openInInkscapeSchema, refreshInInkscapeSchema, renderPreviewSchema } from "../core/validation.js";
+import {
+  diagnoseInkscapeGuiSchema,
+  exportDocumentExternalSchema,
+  exportDocumentSchema,
+  openInInkscapeSchema,
+  refreshInInkscapeSchema,
+  renderPreviewSchema,
+} from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import { prePullBeforeStaleTolerantOutput, jsonResult, type ToolContext } from "./context.js";
 import { normalizeExportFilename, readPngContent } from "./document.js";
@@ -46,19 +53,35 @@ export async function renderPreview(input: z.infer<typeof renderPreviewSchema>, 
 }
 
 export async function exportDocument(input: z.infer<typeof exportDocumentSchema>, ctx: ToolContext) {
+  const filename = normalizeExportFilename(input.filename, input.docId, input.format);
+  return exportDocumentToPath(input, ctx, ctx.workspace.exportPath(input.docId, filename), "export_document");
+}
+
+export async function exportDocumentExternal(input: z.infer<typeof exportDocumentExternalSchema>, ctx: ToolContext) {
+  const filename = normalizeExportFilename(input.filename, input.docId, input.format);
+  const outputPath = ctx.workspace.externalExportPath(input.outputDirectory, filename);
+  return exportDocumentToPath(input, ctx, outputPath, "export_document_external");
+}
+
+async function exportDocumentToPath(
+  input: z.infer<typeof exportDocumentSchema>,
+  ctx: ToolContext,
+  outputPath: string,
+  toolName: "export_document" | "export_document_external",
+) {
   const paths = ctx.workspace.documentPaths(input.docId);
   const prePull = await prePullBeforeStaleTolerantOutput(ctx, input.docId, {
-    toolName: "export_document",
+    toolName,
     skipPrePull: input.skipPrePull,
     timeoutMs: input.timeoutMs,
   });
   const svg = await ctx.workspace.readSvg(input.docId);
-  const outputPath = ctx.workspace.exportPath(input.docId, normalizeExportFilename(input.filename, input.docId, input.format));
   const exportInputPath = input.includeInkMcpMetadata ? paths.currentSvg : ctx.workspace.tempPath(input.docId, `export-${Date.now()}.svg`);
   if (!input.includeInkMcpMetadata) {
     await mkdir(path.dirname(exportInputPath), { recursive: true });
     await writeFile(exportInputPath, stripInkMcpMetadata(svg), "utf8");
   }
+  await mkdir(path.dirname(outputPath), { recursive: true });
   let exported;
   try {
     exported = await ctx.inkscape.exportDocument(exportInputPath, outputPath, {
@@ -75,7 +98,7 @@ export async function exportDocument(input: z.infer<typeof exportDocumentSchema>
   await appendOperationLog(paths, {
     level: "info",
     docId: input.docId,
-    toolName: "export_document",
+    toolName,
     inputSummary: { format: input.format, width: input.width, dpi: input.dpi, textToPath: input.textToPath },
     exportPath: outputPath,
     status: "ok",
@@ -85,6 +108,7 @@ export async function exportDocument(input: z.infer<typeof exportDocumentSchema>
     docId: input.docId,
     outputPath,
     format: input.format,
+    exportMode: toolName === "export_document_external" ? "external" : "workspace",
     currentSvgPath: paths.currentSvg,
     inkscape: { binaryPath: exported.binaryPath, exitCode: exported.exitCode },
     ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
@@ -209,5 +233,19 @@ export async function refreshInInkscape(input: z.infer<typeof refreshInInkscapeS
           "Active-window file-rebase is an unstable best-effort path and may crash some Inkscape versions on Windows. The workspace SVG remains authoritative.",
       },
     ],
+  };
+}
+
+export async function diagnoseInkscapeGui(input: z.infer<typeof diagnoseInkscapeGuiSchema>, ctx: ToolContext) {
+  const diagnostics = await ctx.inkscape.diagnoseGui({ timeoutMs: input.timeoutMs });
+  return {
+    ok: true,
+    ...(input.docId ? { docId: input.docId } : {}),
+    diagnostics,
+    automationBoundary: {
+      primaryPath: "companion_extension_or_active_window_actions",
+      mouseKeyboardAutomation: "diagnostic_fallback_only",
+      mutatesSvg: false,
+    },
   };
 }

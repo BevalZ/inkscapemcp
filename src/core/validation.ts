@@ -49,6 +49,7 @@ export const connectInkscapeWindowSchema = z.object({
   documentPath: z.string().min(1).optional(),
   inferredDocId: docIdSchema.optional(),
   runtimeDocumentId: z.string().min(1).max(200).optional(),
+  windowId: z.string().min(1).max(200).optional(),
   timeoutMs: z.number().int().positive().optional(),
 });
 
@@ -60,8 +61,25 @@ export const disconnectInkscapeWindowSchema = z.object({
 export const pullGuiStateSchema = z.object({
   docId: docIdSchema,
   connectionId: connectionIdSchema.optional(),
-  conflictPolicy: z.enum(["reject", "prefer_gui", "prefer_workspace"]).default("reject"),
+  conflictPolicy: z.enum(["reject", "prefer_gui", "prefer_workspace", "merge_non_overlapping"]).default("reject"),
   timeoutMs: z.number().int().positive().optional(),
+});
+
+export const startGuiSyncPollingSchema = z.object({
+  docId: docIdSchema,
+  connectionId: connectionIdSchema.optional(),
+  intervalMs: z.number().int().min(250).max(60_000).optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+export const stopGuiSyncPollingSchema = z.object({
+  docId: docIdSchema.optional(),
+  connectionId: connectionIdSchema.optional(),
+});
+
+export const getGuiSyncStatusSchema = z.object({
+  docId: docIdSchema.optional(),
+  connectionId: connectionIdSchema.optional(),
 });
 
 export const addElementSchema = z.object({
@@ -238,11 +256,35 @@ export const replaceAttributeValuesSchema = z.object({
   scopeElementIds: z.array(elementIdSchema).min(1).optional(),
 });
 
+const semanticFingerprintSchema = z.object({
+  elementId: z.string().min(1).optional(),
+  type: z.string().min(1),
+  parentChain: z.array(z.string()).default([]),
+  siblingIndex: z.number().int().nonnegative().default(0),
+  attributesHash: z.string().min(1),
+  styleHash: z.string().min(1),
+  geometryHash: z.string().min(1).optional(),
+  textHash: z.string().min(1).optional(),
+  bbox: z
+    .object({
+      minX: z.number(),
+      minY: z.number(),
+      maxX: z.number(),
+      maxY: z.number(),
+      width: z.number(),
+      height: z.number(),
+    })
+    .optional(),
+});
+
 export const queryDocumentSchema = z.object({
   docId: docIdSchema,
   elementId: z.string().optional(),
   skipPrePull: z.boolean().default(false),
   allowStaleRead: z.boolean().default(false),
+  includeFingerprints: z.boolean().default(false),
+  matchElementFingerprint: semanticFingerprintSchema.optional(),
+  matchLimit: z.number().int().min(1).max(20).default(5),
 });
 
 export const renderPreviewSchema = z.object({
@@ -266,6 +308,16 @@ export const exportDocumentSchema = z.object({
   includeInkMcpMetadata: z.boolean().default(false),
 });
 
+export const importSvgDocumentSchema = z.object({
+  sourcePath: z.string().min(1),
+  docId: docIdSchema.optional(),
+  title: z.string().min(1).max(200).optional(),
+});
+
+export const exportDocumentExternalSchema = exportDocumentSchema.extend({
+  outputDirectory: z.string().min(1),
+});
+
 export const openInInkscapeSchema = z.object({
   docId: docIdSchema,
 });
@@ -274,6 +326,11 @@ export const refreshInInkscapeSchema = z.object({
   docId: docIdSchema,
   allowUnstableRebase: z.boolean().default(false),
   useCompanionExtension: z.boolean().default(true),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+export const diagnoseInkscapeGuiSchema = z.object({
+  docId: docIdSchema.optional(),
   timeoutMs: z.number().int().positive().optional(),
 });
 
@@ -294,6 +351,16 @@ export const archiveDocumentSchema = z.object({
 export const importFontSchema = z.object({
   sourcePath: z.string().min(1),
   filename: z.string().min(1).max(120).optional(),
+});
+
+export const vectorizeBitmapSchema = z.object({
+  docId: docIdSchema,
+  sourcePath: z.string().min(1),
+  engine: z.enum(["vtracer", "potrace"]).default("vtracer"),
+  outputElementId: elementIdSchema.optional(),
+  filename: z.string().min(1).max(120).optional(),
+  runQualityCheck: z.boolean().default(true),
+  timeoutMs: z.number().int().positive().optional(),
 });
 
 export const pathGeometryBaseSchema = z.object({

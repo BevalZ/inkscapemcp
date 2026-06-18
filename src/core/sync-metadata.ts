@@ -15,6 +15,7 @@ export interface InkMcpSvgMarker {
   documentPath?: string;
   inferredDocId?: string;
   runtimeDocumentId?: string;
+  windowId?: string;
   updatedAt: string;
 }
 
@@ -24,8 +25,8 @@ export interface ElementIdDiff {
   added: string[];
 }
 
-export function createConnectionId(): string {
-  return `conn-${randomUUID()}`;
+export function createConnectionId(prefix = "conn"): string {
+  return `${prefix}-${randomUUID()}`;
 }
 
 export function contentHash(svg: string): string {

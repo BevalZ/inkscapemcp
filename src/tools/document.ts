@@ -13,10 +13,12 @@ import {
   summarizeDocument,
   summarizeElement,
 } from "../core/svg-document.js";
+import { findSemanticElementMatches, fingerprintSvgElements } from "../core/semantic-fingerprint.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
   createDocumentSchema,
+  importSvgDocumentSchema,
   listHistorySchema,
   queryDocumentSchema,
   replaceDocumentSvgSchema,
@@ -54,6 +56,32 @@ export async function createDocument(input: z.infer<typeof createDocumentSchema>
     ok: true,
     document: summarizeDocument(parseSvgDocument(svg), paths.currentSvg, docId, title),
     paths,
+  };
+}
+
+export async function importSvgDocument(input: z.infer<typeof importSvgDocumentSchema>, ctx: ToolContext) {
+  const docId = input.docId ?? createDocId(path.basename(input.sourcePath, path.extname(input.sourcePath)));
+  const title = input.title ?? docId;
+  const paths = await ctx.workspace.importSvgDocument(input.sourcePath, docId, title);
+  const svg = await ctx.workspace.readSvg(docId);
+  await appendOperationLog(paths, {
+    level: "info",
+    docId,
+    toolName: "import_svg_document",
+    inputSummary: { sourceExtension: path.extname(input.sourcePath).toLowerCase() },
+    status: "ok",
+  });
+  return {
+    ok: true,
+    docId,
+    currentSvgPath: paths.currentSvg,
+    document: summarizeDocument(parseSvgDocument(svg), paths.currentSvg, docId, title),
+    warnings: [
+      {
+        code: "WORKSPACE_COPY",
+        message: "The SVG was imported into the InkSMCP workspace. Future edits modify the workspace copy, not the original source file.",
+      },
+    ],
   };
 }
 
@@ -124,6 +152,10 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
     ok: true,
     document: summarizeDocument(document, paths.currentSvg, input.docId, metadata.title),
     tree: summarizeElement(target),
+    ...(input.includeFingerprints ? { semanticFingerprints: fingerprintSvgElements(svg) } : {}),
+    ...(input.matchElementFingerprint
+      ? { semanticMatches: findSemanticElementMatches(svg, input.matchElementFingerprint, input.matchLimit) }
+      : {}),
     ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
     ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };

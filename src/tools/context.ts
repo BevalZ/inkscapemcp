@@ -2,30 +2,39 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { DirectAttributeUpdate } from "../adapters/inkscape-cli.js";
 import { InkscapeCli } from "../adapters/inkscape-cli.js";
+import { VectorizerCli } from "../adapters/vectorizer.js";
 import type { DocumentPaths } from "../adapters/workspace.js";
 import { Workspace } from "../adapters/workspace.js";
 import { InkMcpError, toErrorPayload } from "../core/errors.js";
 import type { AttributeMap, SvgOperation } from "../core/svg-ops.js";
-import { prePullGuiStateForTool } from "./sync.js";
-import { updateActiveConnectionBaselineAfterMcpWrite } from "./sync.js";
+import {
+  createGuiSyncPollRegistry,
+  prePullGuiStateForTool,
+  updateActiveConnectionBaselineAfterMcpWrite,
+  type GuiSyncPollRegistry,
+} from "./sync.js";
 
 export interface ToolContext {
   workspace: Workspace;
   inkscape: InkscapeCli;
+  vectorizer: VectorizerCli;
   autoRefresh?: {
     enabled: boolean;
     timeoutMs?: number;
   };
+  guiSyncPolling?: GuiSyncPollRegistry;
 }
 
 export function createToolContext(): ToolContext {
   return {
     workspace: new Workspace(),
     inkscape: new InkscapeCli(),
+    vectorizer: new VectorizerCli(),
     autoRefresh: {
       enabled: process.env.INKSMCP_AUTO_REFRESH_INKSCAPE !== "0",
       timeoutMs: positiveEnvInt("INKSMCP_AUTO_REFRESH_TIMEOUT_MS") ?? 10_000,
     },
+    guiSyncPolling: createGuiSyncPollRegistry(),
   };
 }
 

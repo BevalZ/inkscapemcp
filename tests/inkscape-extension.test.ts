@@ -32,6 +32,8 @@ describe("Inkscape companion extension", () => {
 
     expect(inx).toContain("<id>dev.hydens.inksmcp.push_gui_state</id>");
     expect(inx).toContain("<param name=\"action\" type=\"string\" gui-hidden=\"true\">push</param>");
+    expect(inx).toContain("<param name=\"runtime_document_id\" type=\"string\" gui-hidden=\"true\"></param>");
+    expect(inx).toContain("<param name=\"window_id\" type=\"string\" gui-hidden=\"true\"></param>");
     expect(inx).toContain("<command location=\"inx\" interpreter=\"python\">inksmcp_pull.py</command>");
   });
 

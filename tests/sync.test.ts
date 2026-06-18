@@ -9,7 +9,14 @@ import { Workspace } from "../src/adapters/workspace.js";
 import { createSvgDocument } from "../src/core/svg-document.js";
 import { injectInkMcpMarker, stripInkMcpMetadata } from "../src/core/sync-metadata.js";
 import { addElement, updateElement } from "../src/tools/elements.js";
-import { connectInkscapeWindow, pullGuiState } from "../src/tools/sync.js";
+import {
+  connectInkscapeWindow,
+  createGuiSyncPollRegistry,
+  getGuiSyncStatus,
+  pullGuiState,
+  startGuiSyncPolling,
+  stopGuiSyncPolling,
+} from "../src/tools/sync.js";
 import { exportDocument } from "../src/tools/preview.js";
 import { queryDocument, rollbackDocument } from "../src/tools/document.js";
 
@@ -32,7 +39,13 @@ describe("bidirectional GUI sync", () => {
 
   it("connects a document by injecting a marker and creating connection config", async () => {
     const result = await connectInkscapeWindow(
-      { docId: "fish", syncMode: "bidirectional", documentPath: workspace.documentPaths("fish").currentSvg },
+      {
+        docId: "fish",
+        syncMode: "bidirectional",
+        documentPath: workspace.documentPaths("fish").currentSvg,
+        runtimeDocumentId: "runtime-fish",
+        windowId: "window-a",
+      },
       { workspace, inkscape, autoRefresh: { enabled: false } },
     );
 
@@ -44,8 +57,30 @@ describe("bidirectional GUI sync", () => {
       docId: "fish",
       syncMode: "bidirectional",
       state: "connected",
+      runtimeDocumentId: "runtime-fish",
+      windowId: "window-a",
       baselineRevision: 2,
     });
+  });
+
+  it("allows multiple bidirectional connections only when runtime window identity is explicit", async () => {
+    await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-a" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    await expect(
+      connectInkscapeWindow(
+        { docId: "fish", syncMode: "bidirectional" },
+        { workspace, inkscape, autoRefresh: { enabled: false } },
+      ),
+    ).rejects.toThrow("provide windowId");
+
+    const second = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-b" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    expect(second.connection).toMatchObject({ windowId: "window-b" });
   });
 
   it("attempts to push the connection marker into the active window on connect", async () => {
@@ -82,6 +117,7 @@ describe("bidirectional GUI sync", () => {
         connectionId: options.connectionId,
         docId: options.docId,
         syncMode: options.syncMode,
+        windowId: options.windowId,
         updatedAt: new Date().toISOString(),
       });
       await writeFile(workspace.guiPullSvgPath(options.requestId), pulled, "utf8");
@@ -92,6 +128,7 @@ describe("bidirectional GUI sync", () => {
           connectionId: options.connectionId,
           requestedDocId: options.docId,
           inferredDocId: options.docId,
+          windowId: options.windowId,
           exportedAt: new Date().toISOString(),
           svgPath: workspace.guiPullSvgPath(options.requestId),
         })}\n`,
@@ -121,6 +158,46 @@ describe("bidirectional GUI sync", () => {
     const metadata = await workspace.readMetadata("fish");
     expect(metadata).toMatchObject({ revision: 3, lastWriter: "gui" });
     expect(metadata.lastGuiPullAt).toBeTruthy();
+  });
+
+  it("rejects GUI pulls with a mismatched window identity", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-a" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    vi.spyOn(inkscape, "pushGuiStateWithCompanionExtension").mockImplementation(async (options) => {
+      const pulled = injectInkMcpMarker(baseSvg("#facc15"), {
+        connectionId: options.connectionId,
+        docId: options.docId,
+        syncMode: options.syncMode,
+        windowId: "window-b",
+        updatedAt: new Date().toISOString(),
+      });
+      await writeFile(workspace.guiPullSvgPath(options.requestId), pulled, "utf8");
+      await writeFile(
+        workspace.guiPullManifestPath(options.requestId),
+        `${JSON.stringify({
+          requestId: options.requestId,
+          connectionId: options.connectionId,
+          requestedDocId: options.docId,
+          windowId: "window-b",
+          exportedAt: new Date().toISOString(),
+        })}\n`,
+        "utf8",
+      );
+      return { binaryPath: "inkscape", stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    await expect(
+      pullGuiState(
+        {
+          docId: "fish",
+          connectionId: connected.connection.connectionId,
+          conflictPolicy: "reject",
+        },
+        { workspace, inkscape, autoRefresh: { enabled: false } },
+      ),
+    ).rejects.toThrow("window id");
   });
 
   it("pre-pulls before writes and leaves workspace unchanged when GUI pull fails", async () => {
@@ -220,7 +297,16 @@ describe("bidirectional GUI sync", () => {
         { docId: "fish", connectionId: connected.connection.connectionId, conflictPolicy: "reject" },
         { workspace, inkscape, autoRefresh: { enabled: false } },
       ),
-    ).rejects.toThrow("changed since");
+    ).rejects.toMatchObject({
+      code: "SYNC_CONFLICT",
+      details: {
+        conflictReport: expect.objectContaining({
+          hasConflict: true,
+          baseline: expect.objectContaining({ revision: 2 }),
+          guiCandidate: expect.objectContaining({ idDiff: expect.any(Object) }),
+        }),
+      },
+    });
 
     const result = await pullGuiState(
       { docId: "fish", connectionId: connected.connection.connectionId, conflictPolicy: "prefer_gui" },
@@ -230,6 +316,179 @@ describe("bidirectional GUI sync", () => {
     expect(result).toMatchObject({ ok: true, wrote: true });
     await expect(workspace.readSvg("fish")).resolves.not.toContain("workspace-change");
     await expect(workspace.readSvg("fish")).resolves.toContain("#a7f3d0");
+  });
+
+  it("merges non-overlapping GUI and workspace changes conservatively", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_non_overlap", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<circle id="workspace-change" cx="5" cy="5" r="2" fill="#0f172a"/></svg>'),
+      result: {},
+    }));
+    vi.spyOn(inkscape, "pushGuiStateWithCompanionExtension").mockImplementation(async (options) => {
+      const pulled = injectInkMcpMarker(baseSvg("#a7f3d0"), {
+        connectionId: options.connectionId,
+        docId: options.docId,
+        syncMode: options.syncMode,
+        updatedAt: new Date().toISOString(),
+      });
+      await writeFile(workspace.guiPullSvgPath(options.requestId), pulled, "utf8");
+      await writeFile(
+        workspace.guiPullManifestPath(options.requestId),
+        `${JSON.stringify({
+          requestId: options.requestId,
+          connectionId: options.connectionId,
+          requestedDocId: options.docId,
+          exportedAt: new Date().toISOString(),
+        })}\n`,
+        "utf8",
+      );
+      return { binaryPath: "inkscape", stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "merge_non_overlapping",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: true,
+      merge: {
+        ok: true,
+        strategy: "merge_non_overlapping",
+        appliedElementIds: expect.arrayContaining(["body", "tail"]),
+      },
+    });
+    const svg = await workspace.readSvg("fish");
+    expect(svg).toContain("workspace-change");
+    expect(svg).toContain("#a7f3d0");
+  });
+
+  it("rejects merge_non_overlapping when both sides change the same element", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_overlap", (currentSvg) => ({
+      svg: currentSvg.replace('id="body"', 'id="body" stroke="#111827"'),
+      result: {},
+    }));
+    vi.spyOn(inkscape, "pushGuiStateWithCompanionExtension").mockImplementation(async (options) => {
+      const pulled = injectInkMcpMarker(baseSvg("#a7f3d0"), {
+        connectionId: options.connectionId,
+        docId: options.docId,
+        syncMode: options.syncMode,
+        updatedAt: new Date().toISOString(),
+      });
+      await writeFile(workspace.guiPullSvgPath(options.requestId), pulled, "utf8");
+      await writeFile(
+        workspace.guiPullManifestPath(options.requestId),
+        `${JSON.stringify({
+          requestId: options.requestId,
+          connectionId: options.connectionId,
+          requestedDocId: options.docId,
+          exportedAt: new Date().toISOString(),
+        })}\n`,
+        "utf8",
+      );
+      return { binaryPath: "inkscape", stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    await expect(
+      pullGuiState(
+        {
+          docId: "fish",
+          connectionId: connected.connection.connectionId,
+          conflictPolicy: "merge_non_overlapping",
+        },
+        { workspace, inkscape, autoRefresh: { enabled: false } },
+      ),
+    ).rejects.toMatchObject({
+      code: "SYNC_CONFLICT",
+      details: {
+        merge: expect.objectContaining({
+          ok: false,
+          conflicts: expect.arrayContaining([
+            expect.objectContaining({ elementId: "body", reason: "overlapping_element_change" }),
+          ]),
+        }),
+      },
+    });
+  });
+
+  it("starts, reports, and stops lightweight GUI sync polling without overlapping pulls", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-a" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    const ctx = {
+      workspace,
+      inkscape,
+      autoRefresh: { enabled: false },
+      guiSyncPolling: createGuiSyncPollRegistry(),
+    };
+    let releasePull: (() => void) | undefined;
+    let resolvePullFinished!: () => void;
+    const pullFinished = new Promise<void>((resolve) => {
+      resolvePullFinished = resolve;
+    });
+    const pullStarted = new Promise<void>((resolve) => {
+      vi.spyOn(inkscape, "pushGuiStateWithCompanionExtension").mockImplementation(async (options) => {
+        resolve();
+        await new Promise<void>((release) => {
+          releasePull = release;
+        });
+        const pulled = injectInkMcpMarker(await workspace.readSvg("fish"), {
+          connectionId: options.connectionId,
+          docId: options.docId,
+          syncMode: options.syncMode,
+          windowId: options.windowId,
+          updatedAt: new Date().toISOString(),
+        });
+        await writeFile(workspace.guiPullSvgPath(options.requestId), pulled, "utf8");
+        await writeFile(
+          workspace.guiPullManifestPath(options.requestId),
+          `${JSON.stringify({
+            requestId: options.requestId,
+            connectionId: options.connectionId,
+            requestedDocId: options.docId,
+            windowId: options.windowId,
+            exportedAt: new Date().toISOString(),
+          })}\n`,
+          "utf8",
+        );
+        resolvePullFinished();
+        return { binaryPath: "inkscape", stdout: "", stderr: "", exitCode: 0 };
+      });
+    });
+
+    try {
+      const started = await startGuiSyncPolling(
+        { docId: "fish", connectionId: connected.connection.connectionId, intervalMs: 250 },
+        ctx,
+      );
+      expect(started).toMatchObject({ ok: true, alreadyRunning: false });
+      await pullStarted;
+      await delay(350);
+      expect(inkscape.pushGuiStateWithCompanionExtension).toHaveBeenCalledTimes(1);
+
+      releasePull?.();
+      await pullFinished;
+      await waitForPollingStatus(ctx, connected.connection.connectionId, { pullCount: 1, inFlight: false });
+
+      const stopped = await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx);
+      expect(stopped.stopped[0]).toMatchObject({ state: "stopped" });
+    } finally {
+      releasePull?.();
+      await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx).catch(() => undefined);
+    }
   });
 
   it("allows stale query reads with a warning when pre-pull fails", async () => {
@@ -377,4 +636,37 @@ function baseSvg(fill: string, extra = ""): string {
   <path id="tail" d="M10 30 L1 18 L1 42 Z" fill="${fill}"/>
   ${extra}
 </svg>`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForPollingStatus(
+  ctx: Parameters<typeof getGuiSyncStatus>[1],
+  connectionId: string,
+  expected: { pullCount: number; inFlight: boolean },
+): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 2_000) {
+    const status = await getGuiSyncStatus({ connectionId }, ctx);
+    const polling = status.polling[0];
+    if (polling?.pullCount === expected.pullCount && polling.inFlight === expected.inFlight) {
+      expect(polling).toMatchObject({
+        connectionId,
+        state: "running",
+        pullCount: expected.pullCount,
+        inFlight: expected.inFlight,
+      });
+      return;
+    }
+    await delay(20);
+  }
+  const status = await getGuiSyncStatus({ connectionId }, ctx);
+  expect(status.polling[0]).toMatchObject({
+    connectionId,
+    state: "running",
+    pullCount: expected.pullCount,
+    inFlight: expected.inFlight,
+  });
 }

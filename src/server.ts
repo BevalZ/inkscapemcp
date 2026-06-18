@@ -12,11 +12,15 @@ import {
   connectInkscapeWindowSchema,
   createDocumentSchema,
   deleteElementSchema,
+  diagnoseInkscapeGuiSchema,
   disconnectInkscapeWindowSchema,
   drawPathSchema,
   editPathNodesSchema,
+  exportDocumentExternalSchema,
   exportDocumentSchema,
+  getGuiSyncStatusSchema,
   importFontSchema,
+  importSvgDocumentSchema,
   insertSvgFragmentSchema,
   listHistorySchema,
   nudgePathElementSchema,
@@ -34,13 +38,17 @@ import {
   replacePathDataSchema,
   rollbackDocumentSchema,
   runActionSchema,
+  startGuiSyncPollingSchema,
+  stopGuiSyncPollingSchema,
   updateElementSchema,
+  vectorizeBitmapSchema,
 } from "./core/validation.js";
 import { toErrorPayload } from "./core/errors.js";
 import { createToolContext, jsonResult, runTool } from "./tools/context.js";
 import {
   archiveDocument,
   createDocument,
+  importSvgDocument,
   listHistory,
   queryDocument,
   replaceDocumentSvg,
@@ -60,11 +68,26 @@ import {
   replacePathData,
   updateElement,
 } from "./tools/elements.js";
-import { exportDocument, openInInkscape, refreshInInkscape, renderPreview } from "./tools/preview.js";
+import {
+  diagnoseInkscapeGui,
+  exportDocument,
+  exportDocumentExternal,
+  openInInkscape,
+  refreshInInkscape,
+  renderPreview,
+} from "./tools/preview.js";
 import { importFont } from "./tools/fonts.js";
 import { runAllowedAction, runPathDifference, runPathGeometry } from "./tools/geometry.js";
 import { listCurrentSvgResources, listPreviewPngResources, readArtifactResource } from "./tools/resources.js";
-import { connectInkscapeWindow, disconnectInkscapeWindow, pullGuiState } from "./tools/sync.js";
+import { vectorizeBitmap } from "./tools/vectorize.js";
+import {
+  connectInkscapeWindow,
+  disconnectInkscapeWindow,
+  getGuiSyncStatus,
+  pullGuiState,
+  startGuiSyncPolling,
+  stopGuiSyncPolling,
+} from "./tools/sync.js";
 
 export function createServer() {
   const ctx = createToolContext();
@@ -104,6 +127,37 @@ export function createServer() {
   );
 
   server.registerTool(
+    "start_gui_sync_polling",
+    {
+      title: "Start GUI sync polling",
+      description:
+        "Start explicit lightweight polling for a bidirectional Inkscape GUI connection. Disabled by default until this tool is called.",
+      inputSchema: startGuiSyncPollingSchema,
+    },
+    (input) => runTool("start_gui_sync_polling", () => startGuiSyncPolling(input, ctx)),
+  );
+
+  server.registerTool(
+    "stop_gui_sync_polling",
+    {
+      title: "Stop GUI sync polling",
+      description: "Stop lightweight GUI sync polling by document id or connection id.",
+      inputSchema: stopGuiSyncPollingSchema,
+    },
+    (input) => runTool("stop_gui_sync_polling", () => stopGuiSyncPolling(input, ctx)),
+  );
+
+  server.registerTool(
+    "get_gui_sync_status",
+    {
+      title: "Get GUI sync status",
+      description: "Return in-process lightweight GUI sync polling status and recent pull errors.",
+      inputSchema: getGuiSyncStatusSchema,
+    },
+    (input) => runTool("get_gui_sync_status", () => getGuiSyncStatus(input, ctx)),
+  );
+
+  server.registerTool(
     "create_document",
     {
       title: "Create SVG document",
@@ -111,6 +165,16 @@ export function createServer() {
       inputSchema: createDocumentSchema,
     },
     (input) => runTool("create_document", () => createDocument(input, ctx)),
+  );
+
+  server.registerTool(
+    "import_svg_document",
+    {
+      title: "Import SVG document",
+      description: "Import a local SVG file into the InkSMCP workspace as an editable copy.",
+      inputSchema: importSvgDocumentSchema,
+    },
+    (input) => runTool("import_svg_document", () => importSvgDocument(input, ctx)),
   );
 
   server.registerTool(
@@ -287,6 +351,16 @@ export function createServer() {
   );
 
   server.registerTool(
+    "export_document_external",
+    {
+      title: "Export document outside workspace",
+      description: "Export a workspace document to an explicit local output directory.",
+      inputSchema: exportDocumentExternalSchema,
+    },
+    (input) => runTool("export_document_external", () => exportDocumentExternal(input, ctx)),
+  );
+
+  server.registerTool(
     "open_in_inkscape",
     {
       title: "Open in Inkscape",
@@ -306,6 +380,17 @@ export function createServer() {
       inputSchema: refreshInInkscapeSchema,
     },
     (input) => runTool("refresh_in_inkscape", () => refreshInInkscape(input, ctx)),
+  );
+
+  server.registerTool(
+    "diagnose_inkscape_gui",
+    {
+      title: "Diagnose Inkscape GUI",
+      description:
+        "Inspect Inkscape GUI integration prerequisites without mouse/keyboard automation or SVG mutation.",
+      inputSchema: diagnoseInkscapeGuiSchema,
+    },
+    (input) => runTool("diagnose_inkscape_gui", () => diagnoseInkscapeGui(input, ctx)),
   );
 
   server.registerTool(
@@ -346,6 +431,17 @@ export function createServer() {
       inputSchema: importFontSchema,
     },
     (input) => runTool("import_font", () => importFont(input, ctx)),
+  );
+
+  server.registerTool(
+    "vectorize_bitmap",
+    {
+      title: "Vectorize bitmap",
+      description:
+        "Run an allowlisted bitmap vectorizer and optionally render/diff the result. Produces a separate SVG artifact for review.",
+      inputSchema: vectorizeBitmapSchema,
+    },
+    (input) => runTool("vectorize_bitmap", () => vectorizeBitmap(input, ctx)),
   );
 
   server.registerTool(

@@ -53,10 +53,15 @@ Bidirectional sync is explicit and off by default. Use it when user edits inside
 2. Open `workspace/drawings/{docId}/current.svg` in Inkscape.
 3. Call `connect_inkscape_window({ "docId": "...", "syncMode": "bidirectional" })`.
 4. MCP tools that read or write current SVG state will pre-pull the GUI state through the extension.
+5. Optionally call `start_gui_sync_polling({ "docId": "...", "connectionId": "..." })` to keep pulling GUI state in the background.
 
 The pull path is file-based and identity-checked. The extension writes `workspace/gui-pull/{requestId}.svg` plus `workspace/gui-pull/{requestId}.json`; MCP validates the manifest, the SVG metadata marker, the connection id, and revision/hash metadata before replacing `current.svg`.
 
-Use `pull_gui_state` for an explicit manual pull, and `disconnect_inkscape_window` to end a connection. The MVP does not run a background daemon or event listener. If more than one active bidirectional connection targets the same document, MCP rejects instead of guessing.
+Use `pull_gui_state` for an explicit manual pull, `start_gui_sync_polling` / `stop_gui_sync_polling` for explicit lightweight background polling, `get_gui_sync_status` to inspect polling errors, and `disconnect_inkscape_window` to end a connection. Polling is disabled by default. If more than one active bidirectional connection targets the same document, current-state tools reject unless the operation provides a specific `connectionId`; MCP never guesses based on the active window alone.
+
+For multi-window workflows, pass `windowId` and/or `runtimeDocumentId` to `connect_inkscape_window`. Those values are persisted in the connection sidecar, SVG marker, companion-extension config, and GUI pull manifest when available. If a connection supplied either value, a missing or mismatched value on a later GUI pull rejects with `SYNC_IDENTITY_MISMATCH`.
+
+When a GUI pull detects that the workspace changed since the connection baseline, `SYNC_CONFLICT` includes a `conflictReport` with baseline metadata, current workspace metadata, GUI candidate hash, id diff, and policy suggestions. Use `conflictPolicy: "prefer_gui"` only when GUI state should replace newer workspace edits. Use `conflictPolicy: "merge_non_overlapping"` to attempt a conservative three-way merge for element ids changed on only one side; overlapping element changes, reparenting, and concurrent adds with the same id still reject with merge conflict details.
 
 ## Build And Test
 
@@ -125,6 +130,7 @@ If the host supports MCP `notifications/tools/list_changed`, changed tool regist
 - `INKSMCP_AUTO_REFRESH_INKSCAPE`: set to `0` to disable automatic active-window refresh after successful write tools. Existing-object attribute updates use direct active-window attribute sync; structural edits trigger companion-extension refresh.
 - `INKSMCP_AUTO_REFRESH_TIMEOUT_MS`: timeout for automatic active-window attribute sync or companion-extension refresh. Defaults to `10000`.
 - `INKSMCP_GUI_PRE_PULL_TTL_MS`: default cache window for automatic GUI pre-pull. Defaults to `1000`.
+- `INKSMCP_GUI_POLL_INTERVAL_MS`: default interval for explicit GUI sync polling. Defaults to `1000`.
 - `INKSMCP_ENABLE_UNSAFE_ACTIVE_WINDOW_REFRESH`: Windows-only escape hatch for manual experiments with active-window companion refresh. Defaults to disabled because it can target the wrong document or crash Inkscape.
 - `INKSMCP_HOT_WATCH_PATHS`: paths watched by `dist/hot-server.js`. Defaults to the build output directory.
 - `INKSMCP_HOT_DEBOUNCE_MS`: debounce before restarting the hot worker. Defaults to `300`.
@@ -155,7 +161,11 @@ Phase 1 document and preview tools:
 - `connect_inkscape_window`
 - `disconnect_inkscape_window`
 - `pull_gui_state`
+- `start_gui_sync_polling`
+- `stop_gui_sync_polling`
+- `get_gui_sync_status`
 - `create_document`
+- `import_svg_document`
 - `add_element`
 - `apply_svg_operations`
 - `update_element`
@@ -172,8 +182,10 @@ Phase 1 document and preview tools:
 - `query_document`
 - `render_preview`
 - `export_document`
+- `export_document_external`
 - `open_in_inkscape`
 - `refresh_in_inkscape`
+- `diagnose_inkscape_gui`
 - `list_history`
 - `rollback_document`
 - `archive_document`
@@ -181,6 +193,7 @@ Phase 1 document and preview tools:
 Phase 2 tools:
 
 - `import_font`
+- `vectorize_bitmap`
 - `path_union`
 - `path_difference`
 - `path_intersection`
@@ -192,13 +205,19 @@ Phase 2 tools:
 
 Raw SVG fragments are parsed and safety-filtered before save. Dangerous elements, event handlers, remote references, local file references, and data references are rejected. Full document replacement requires an `<svg>` root with `viewBox` or both `width` and `height`, plus `confirmFullDocumentReplacement: true`.
 
+External SVG files must be imported before editing. `import_svg_document` accepts a local `.svg` file and creates a workspace copy; later edits do not mutate the original file. `export_document_external` writes an export to an explicit local output directory with a safe filename. Remote URLs, `file:` URIs, and UNC paths are rejected for these controlled file-boundary tools.
+
 For normal edits, prefer in-place tools such as `update_element`, `apply_svg_operations`, `draw_path`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, `insert_svg_fragment`, and `replace_attribute_values`. Use `query_path_nodes` before fine path edits when you need segment indexes and editable points. `replace_document_svg` is a full redraw path and intentionally rejects calls that do not explicitly confirm full document replacement.
+
+`query_document` can include semantic fingerprints with `includeFingerprints: true`, and can rank current-document candidates with `matchElementFingerprint`. The matching uses type, ancestry, sibling position, attribute/style hashes, geometry/path fingerprints, text hash, and approximate bounding boxes. This is a read-only re-identification aid for GUI edits that rename or recreate ids; it does not automatically rewrite ids or merge objects.
 
 Every document write snapshots `current.svg` before replacement. Rollback also snapshots the current state before restoring history. Physical deletion is not supported; use `archive_document`.
 
 For automatic GUI refresh, `update_element`, `nudge_path_element`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, attribute-only `apply_svg_operations`, and direct attribute changes from `replace_attribute_values` use Inkscape's active-window `object-set-attribute` action against existing element ids. Edits that add, delete, insert, remove attributes, or change text trigger companion-extension refresh after save; failures return warnings and do not roll back the workspace SVG.
 
 `refresh_in_inkscape` uses the companion extension by default and does not open another Inkscape window. It does not run Inkscape's active-window `file-rebase` action unless `allowUnstableRebase: true` is explicitly supplied; keep that path for manual experiments only.
+
+`diagnose_inkscape_gui` inspects the Inkscape binary, user extension directory, and InkSMCP companion extension files without mutating SVG state and without mouse/keyboard automation. GUI automation remains diagnostic fallback only; the primary path is companion extension refresh or allowlisted active-window actions.
 
 ## Phase 2 Notes
 
@@ -240,6 +259,8 @@ Node edit example:
 ```
 
 `import_font` copies a local `.ttf`, `.otf`, `.woff`, or `.woff2` file into `workspace/fonts/`. It does not download remote fonts, embed fonts into SVG files, or guarantee cross-machine font availability.
+
+`vectorize_bitmap` runs an allowlisted local bitmap vectorizer (`vtracer` or `potrace`) and writes a separate SVG artifact under `workspace/drawings/{docId}/vectorized/`. It does not insert or replace artwork automatically. For PNG sources, it can render the result through Inkscape and report basic pixel-diff metrics such as mean absolute error, RMSE, and exact pixel match ratio. Configure vectorizer binaries with `VTRACER_BIN` or `POTRACE_BIN`, or put them on `PATH`.
 
 Path geometry tools run Inkscape actions on explicit element ids in the current document. They do not use hidden GUI selection state. `autoConvertToPath` defaults to `true`; when selected text is converted, the tool returns a warning because the text may no longer be editable.
 

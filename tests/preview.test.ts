@@ -12,7 +12,7 @@ import { InkMcpError } from "../src/core/errors.js";
 import { Workspace } from "../src/adapters/workspace.js";
 import { createSvgDocument } from "../src/core/svg-document.js";
 import { addElement } from "../src/tools/elements.js";
-import { refreshInInkscape } from "../src/tools/preview.js";
+import { diagnoseInkscapeGui, refreshInInkscape } from "../src/tools/preview.js";
 
 describe("preview tools", () => {
   let root: string;
@@ -112,5 +112,39 @@ describe("preview tools", () => {
     });
     expect(companion).toHaveBeenCalledTimes(1);
     await expect(workspace.readSvg("write-doc")).resolves.toContain('id="box"');
+  });
+
+  it("diagnoses GUI integration without mutating SVG state", async () => {
+    await workspace.createDocument(
+      "diagnose-doc",
+      "Diagnose doc",
+      createSvgDocument({ title: "Diagnose doc", width: 20, height: 20, unit: "px" }),
+    );
+    const before = await workspace.readSvg("diagnose-doc");
+    const inkscape = new InkscapeCli();
+    vi.spyOn(inkscape, "diagnoseGui").mockResolvedValue({
+      binaryAvailable: true,
+      binaryPath: "inkscape",
+      userDataDirectory: path.join(root, "inkscape"),
+      extensionDirectory: path.join(root, "inkscape", "extensions"),
+      companionExtensionInstalled: true,
+      pushExtensionInstalled: true,
+      warnings: [],
+    });
+
+    const result = await diagnoseInkscapeGui(
+      { docId: "diagnose-doc" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "diagnose-doc",
+      automationBoundary: {
+        mouseKeyboardAutomation: "diagnostic_fallback_only",
+        mutatesSvg: false,
+      },
+    });
+    await expect(workspace.readSvg("diagnose-doc")).resolves.toBe(before);
   });
 });
