@@ -1040,3 +1040,36 @@ Added radius point selection for transform_path_points, including schema validat
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Path point segment list selector
+
+**Date**: 2026-06-19
+**Task**: Path point segment list selector
+**Branch**: `main`
+
+### Summary
+
+Added the Phase 1 transform_path_points segment_list selector for deterministic non-contiguous segment point edits, with validation, core/tool tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `df24e8f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-06-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1035 | Active |
+| `journal-1.md` | ~1075 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-06-19 | Path point segment list selector | `df24e8f` | `main` |
 | 27 | 2026-06-19 | Path point radius selector | `7d290d7` | `main` |
 | 26 | 2026-06-19 | Path point nearest selector | `f12bb54` | `main` |
 | 25 | 2026-06-19 | Path point segment range selector | `d2cb0d7` | `main` |
