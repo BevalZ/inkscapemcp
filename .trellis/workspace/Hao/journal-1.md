@@ -1139,3 +1139,36 @@ Added Phase 1 transform_path_points point_type selector with schema, core resolu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Path Point Scale Transform
+
+**Date**: 2026-06-19
+**Task**: Path Point Scale Transform
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 transform_path_points scale transform with explicit SVG origin, finite non-zero scale validation, absolute-coordinate mapping for relative and absolute path commands, tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d48fbe5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
