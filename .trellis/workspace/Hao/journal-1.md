@@ -1337,3 +1337,36 @@ Added Phase 1 arbitrary-line reflection support to transform_path_points with va
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Recover Last Snapshot Strategy
+
+**Date**: 2026-06-19
+**Task**: Recover Last Snapshot Strategy
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 recover_document strategy last_snapshot with XOR validation, createdAt-based latest snapshot resolution, recovery tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e370ce0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
