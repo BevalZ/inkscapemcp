@@ -803,6 +803,56 @@ describe("element tools", () => {
     expect(history[0].snapshotId).toContain("transform_path_points");
   });
 
+  it("scales selected path points with direct active-window attribute sync", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "scale",
+          origin: { x: 100, y: 30 },
+          sx: 0.5,
+          sy: 2,
+        },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "mouth", attributeName: "d", value: "M100 30 c18 4 31 1 20.5 -18" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "mouth",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 0, point: "end" },
+        { segmentIndex: 1, point: "end" },
+      ],
+      editedSegments: [0, 1],
+      changed: { d: { from: "M100 30c18 4 31 1 41-9", to: "M100 30 c18 4 31 1 20.5 -18" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30 c18 4 31 1 20.5 -18"');
+    const history = await workspace.listHistory("sync-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
   it("rejects invalid point transforms without writing history", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
 
@@ -860,6 +910,33 @@ describe("element tools", () => {
         { workspace, inkscape, autoRefresh: { enabled: true } },
       ),
     ).rejects.toThrow("c2");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
+  });
+
+  it("rejects invalid scale transforms without writing history", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "sync-doc",
+          elementId: "mouth",
+          pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+          transform: {
+            type: "scale",
+            origin: { x: 100, y: 30 },
+            sx: 0,
+            sy: 1,
+          },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("non-zero");
 
     expect(sync).not.toHaveBeenCalled();
     expect(companion).not.toHaveBeenCalled();

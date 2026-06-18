@@ -372,12 +372,28 @@ export const transformPathPointsSchema = z.object({
         y: z.number().finite(),
       })).min(1),
     }),
+    z.object({
+      type: z.literal("scale"),
+      origin: z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      }),
+      sx: z.number().finite(),
+      sy: z.number().finite(),
+    }),
   ]).superRefine((transform, ctx) => {
     if (transform.type === "translate" && transform.dx === 0 && transform.dy === 0) {
       ctx.addIssue({
         code: "custom",
         message: "Translate transform must move at least one axis.",
         path: ["dx"],
+      });
+    }
+    if (transform.type === "scale" && (transform.sx === 0 || transform.sy === 0)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Scale transform factors must be non-zero.",
+        path: ["sx"],
       });
     }
   }),

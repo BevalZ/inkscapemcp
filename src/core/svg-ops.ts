@@ -175,6 +175,12 @@ export type PathPointTransform =
   | {
       type: "set_relative";
       points: Array<{ x: number; y: number }>;
+    }
+  | {
+      type: "scale";
+      origin: { x: number; y: number };
+      sx: number;
+      sy: number;
     };
 
 export function addElementToSvg(
@@ -355,9 +361,10 @@ export function transformPathPointsInSvg(
   if (!previousD) {
     throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
   }
-  const selectedPoints = resolvePathPointSelector(previousD, input.pointSelector);
+  const pathSegments = describeEditablePathData(previousD);
+  const selectedPoints = resolvePathPointSelector(pathSegments, input.pointSelector);
   validateResolvedPathPointTransform(selectedPoints, input.transform);
-  const edits = pathPointTransformEdits(selectedPoints, input.transform);
+  const edits = pathPointTransformEdits(pathSegments, selectedPoints, input.transform);
   const nextD = applyPathNodeEdits(previousD, edits);
   element.setAttribute("d", nextD);
   return {
@@ -681,6 +688,24 @@ function validatePathPointTransform(transform: PathPointTransform): void {
     return;
   }
 
+  if (transform.type === "scale") {
+    if (
+      !Number.isFinite(transform.origin.x) ||
+      !Number.isFinite(transform.origin.y) ||
+      !Number.isFinite(transform.sx) ||
+      !Number.isFinite(transform.sy)
+    ) {
+      throw new InkMcpError("INVALID_INPUT", "Scale transform origin and factors must be finite.", transform);
+    }
+    if (transform.sx === 0 || transform.sy === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Scale transform factors must be non-zero.", {
+        sx: transform.sx,
+        sy: transform.sy,
+      });
+    }
+    return;
+  }
+
   for (const point of transform.points) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
       throw new InkMcpError("INVALID_INPUT", `${transform.type} target coordinates must be finite.`, point);
@@ -689,7 +714,7 @@ function validatePathPointTransform(transform: PathPointTransform): void {
 }
 
 function validateResolvedPathPointTransform(points: PathPointSelection[], transform: PathPointTransform): void {
-  if (transform.type === "translate") return;
+  if (transform.type === "translate" || transform.type === "scale") return;
   if (transform.points.length !== points.length) {
     throw new InkMcpError("INVALID_INPUT", `${transform.type} target point count must match selected point count.`, {
       selectedPointCount: points.length,
@@ -824,9 +849,12 @@ function validatePathPointRadiusSelector(selector: Extract<PathPointSelector, { 
   }
 }
 
-function resolvePathPointSelector(pathData: string, selector: PathPointSelector): PathPointSelection[] {
+function resolvePathPointSelector(
+  segmentsOrPathData: string | EditablePathSegmentInfo[],
+  selector: PathPointSelector,
+): PathPointSelection[] {
   const selected: PathPointSelection[] = [];
-  const segments = describeEditablePathData(pathData);
+  const segments = typeof segmentsOrPathData === "string" ? describeEditablePathData(segmentsOrPathData) : segmentsOrPathData;
 
   if (selector.type === "bbox") {
     const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
@@ -1007,7 +1035,11 @@ function resolvePathPointSelector(pathData: string, selector: PathPointSelector)
   return selector.points;
 }
 
-function pathPointTransformEdits(points: PathPointSelection[], transform: PathPointTransform): PathNodeEdit[] {
+function pathPointTransformEdits(
+  segments: EditablePathSegmentInfo[],
+  points: PathPointSelection[],
+  transform: PathPointTransform,
+): PathNodeEdit[] {
   if (transform.type === "translate") {
     return points.map((point) => ({
       type: "move_point",
@@ -1016,6 +1048,21 @@ function pathPointTransformEdits(points: PathPointSelection[], transform: PathPo
       dx: transform.dx,
       dy: transform.dy,
     }));
+  }
+
+  if (transform.type === "scale") {
+    return points
+      .map((point) => {
+        const absolutePoint = getSelectedAbsolutePoint(segments, point);
+        return {
+          type: "set_point_absolute" as const,
+          segmentIndex: point.segmentIndex,
+          point: point.point,
+          x: transform.origin.x + (absolutePoint.x - transform.origin.x) * transform.sx,
+          y: transform.origin.y + (absolutePoint.y - transform.origin.y) * transform.sy,
+        };
+      })
+      .sort((left, right) => left.segmentIndex - right.segmentIndex);
   }
 
   return points
@@ -1027,6 +1074,18 @@ function pathPointTransformEdits(points: PathPointSelection[], transform: PathPo
       y: transform.points[index].y,
     }))
     .sort((left, right) => left.segmentIndex - right.segmentIndex);
+}
+
+function getSelectedAbsolutePoint(segments: EditablePathSegmentInfo[], selection: PathPointSelection): { x: number; y: number } {
+  const segment = segments[selection.segmentIndex];
+  const absolutePoint = segment?.absolutePoints[selection.point];
+  if (!absolutePoint) {
+    throw new InkMcpError("INVALID_INPUT", "Selected path point is unavailable.", {
+      segmentIndex: selection.segmentIndex,
+      point: selection.point,
+    });
+  }
+  return absolutePoint;
 }
 
 function applyAttributes(element: XmlElement, attributes: AttributeMap, options: { skipId: boolean }): void {

@@ -574,6 +574,60 @@ describe("path tool validation", () => {
     });
   });
 
+  it("accepts scale point transforms and rejects invalid scale factors", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "scale",
+          origin: { x: 10, y: 20 },
+          sx: 1.25,
+          sy: 0.75,
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "scale",
+        origin: { x: 10, y: 20 },
+        sx: 1.25,
+        sy: 0.75,
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "scale",
+          origin: { x: 10, y: 20 },
+          sx: 0,
+          sy: 1,
+        },
+      }),
+    ).toThrow("non-zero");
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "scale",
+          origin: { x: Number.POSITIVE_INFINITY, y: 20 },
+          sx: 1,
+          sy: 1,
+        },
+      }),
+    ).toThrow();
+  });
+
   it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
     expect(
       transformPathPointsSchema.parse({
