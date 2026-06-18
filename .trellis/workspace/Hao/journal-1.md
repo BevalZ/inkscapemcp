@@ -1403,3 +1403,36 @@ Added Phase 1 recover_document strategy last_successful_write with operation-log
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: Path H V Command Support
+
+**Date**: 2026-06-19
+**Task**: Path H V Command Support
+**Branch**: `main`
+
+### Summary
+
+Implemented Phase 1 raw editable path support for H/h and V/v commands across validation summaries, path queries, node edits, point transforms, docs, and no-side-effect rejection tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f22d90f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
