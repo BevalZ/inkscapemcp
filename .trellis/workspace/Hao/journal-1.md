@@ -173,3 +173,36 @@ Implemented Phase 1 loop 1 foundation hardening: identity/capability summaries, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Roadmap debug hardening loops
+
+**Date**: 2026-06-18
+**Task**: Roadmap debug hardening loops
+**Branch**: `main`
+
+### Summary
+
+Added three phase-specific debug and hardening loop documents with five-loop execution templates and linked them from roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b5b8c5b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
