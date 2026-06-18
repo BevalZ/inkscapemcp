@@ -186,6 +186,11 @@ export type PathPointTransform =
       type: "rotate";
       origin: { x: number; y: number };
       angleDegrees: number;
+    }
+  | {
+      type: "reflect";
+      axis: "vertical" | "horizontal";
+      origin: { x: number; y: number };
     };
 
 export function addElementToSvg(
@@ -727,6 +732,18 @@ function validatePathPointTransform(transform: PathPointTransform): void {
     return;
   }
 
+  if (transform.type === "reflect") {
+    if (transform.axis !== "vertical" && transform.axis !== "horizontal") {
+      throw new InkMcpError("INVALID_INPUT", "Reflect transform axis is unsupported.", {
+        axis: transform.axis,
+      });
+    }
+    if (!Number.isFinite(transform.origin.x) || !Number.isFinite(transform.origin.y)) {
+      throw new InkMcpError("INVALID_INPUT", "Reflect transform origin must be finite.", transform);
+    }
+    return;
+  }
+
   for (const point of transform.points) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
       throw new InkMcpError("INVALID_INPUT", `${transform.type} target coordinates must be finite.`, point);
@@ -735,7 +752,12 @@ function validatePathPointTransform(transform: PathPointTransform): void {
 }
 
 function validateResolvedPathPointTransform(points: PathPointSelection[], transform: PathPointTransform): void {
-  if (transform.type === "translate" || transform.type === "scale" || transform.type === "rotate") return;
+  if (
+    transform.type === "translate" ||
+    transform.type === "scale" ||
+    transform.type === "rotate" ||
+    transform.type === "reflect"
+  ) return;
   if (transform.points.length !== points.length) {
     throw new InkMcpError("INVALID_INPUT", `${transform.type} target point count must match selected point count.`, {
       selectedPointCount: points.length,
@@ -1101,6 +1123,21 @@ function pathPointTransformEdits(
           point: point.point,
           x: transform.origin.x + offsetX * cos - offsetY * sin,
           y: transform.origin.y + offsetX * sin + offsetY * cos,
+        };
+      })
+      .sort((left, right) => left.segmentIndex - right.segmentIndex);
+  }
+
+  if (transform.type === "reflect") {
+    return points
+      .map((point) => {
+        const absolutePoint = getSelectedAbsolutePoint(segments, point);
+        return {
+          type: "set_point_absolute" as const,
+          segmentIndex: point.segmentIndex,
+          point: point.point,
+          x: transform.axis === "vertical" ? transform.origin.x * 2 - absolutePoint.x : absolutePoint.x,
+          y: transform.axis === "horizontal" ? transform.origin.y * 2 - absolutePoint.y : absolutePoint.y,
         };
       })
       .sort((left, right) => left.segmentIndex - right.segmentIndex);

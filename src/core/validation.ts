@@ -389,6 +389,14 @@ export const transformPathPointsSchema = z.object({
       }),
       angleDegrees: z.number().finite(),
     }),
+    z.object({
+      type: z.literal("reflect"),
+      axis: z.enum(["vertical", "horizontal"]),
+      origin: z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      }),
+    }),
   ]).superRefine((transform, ctx) => {
     if (transform.type === "translate" && transform.dx === 0 && transform.dy === 0) {
       ctx.addIssue({

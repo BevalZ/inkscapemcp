@@ -678,6 +678,56 @@ describe("path tool validation", () => {
     ).toThrow();
   });
 
+  it("accepts reflect point transforms and rejects invalid reflect inputs", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "reflect",
+          axis: "vertical",
+          origin: { x: 10, y: 20 },
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "reflect",
+        axis: "vertical",
+        origin: { x: 10, y: 20 },
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "reflect",
+          axis: "diagonal",
+          origin: { x: 10, y: 20 },
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "reflect",
+          axis: "horizontal",
+          origin: { x: 10, y: Number.NaN },
+        },
+      }),
+    ).toThrow();
+  });
+
   it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
     expect(
       transformPathPointsSchema.parse({
