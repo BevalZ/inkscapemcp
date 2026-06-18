@@ -386,6 +386,117 @@ describe("path tool validation", () => {
     });
   });
 
+  it("accepts command point selectors and rejects invalid command selectors", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["C", "q"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "command",
+        commands: ["C", "q"],
+        pointTypes: ["end", "c1", "c2"],
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["c"],
+          pointTypes: ["c1"],
+        },
+        transform: { type: "set_relative", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "command",
+        commands: ["c"],
+        pointTypes: ["c1"],
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: [],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["C", "C"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow("duplicates");
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["A"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["C"],
+          pointTypes: [],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+  });
+
+  it("defers command selector set-transform count validation until selector resolution", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["C"],
+          pointTypes: ["c1", "end"],
+        },
+        transform: { type: "set_absolute", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "command",
+      },
+      transform: {
+        type: "set_absolute",
+        points: [{ x: 1, y: 2 }],
+      },
+    });
+  });
+
   it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
     expect(
       transformPathPointsSchema.parse({

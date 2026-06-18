@@ -1,0 +1,10 @@
+{"file":"docs/roadmap/phase-1-stabilize-foundations.md","reason":"Phase 1 path editing reliability scope and non-goals."}
+{"file":"docs/inkscape-mcp-plan.md","reason":"Product and in-place SVG edit boundaries."}
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index and required checklist."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Module ownership and file layout boundaries."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Failure semantics for invalid selectors and no-write behavior."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend quality, snapshot, schema, and test requirements."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Operation log expectations for successful writes."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Filesystem persistence and snapshot-before-write contract."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Existing path selector contracts and durable roadmap memory."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared thinking guide index for reuse and boundary checks."}

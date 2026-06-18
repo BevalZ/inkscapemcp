@@ -132,6 +132,11 @@ export type PathPointSelector =
       pointTypes?: EditablePathPoint[];
     }
   | {
+      type: "command";
+      commands: Array<EditablePathSegmentInfo["cmd"]>;
+      pointTypes?: EditablePathPoint[];
+    }
+  | {
       type: "nearest";
       x: number;
       y: number;
@@ -623,6 +628,8 @@ function validateTransformPathPointsInput(input: {
     validatePathPointSegmentRangeSelector(input.pointSelector);
   } else if (input.pointSelector.type === "segment_list") {
     validatePathPointSegmentListSelector(input.pointSelector);
+  } else if (input.pointSelector.type === "command") {
+    validatePathPointCommandSelector(input.pointSelector);
   } else if (input.pointSelector.type === "nearest") {
     validatePathPointNearestSelector(input.pointSelector);
   } else if (input.pointSelector.type === "radius") {
@@ -748,6 +755,25 @@ function validatePathPointSegmentListSelector(selector: Extract<PathPointSelecto
   }
 }
 
+function validatePathPointCommandSelector(selector: Extract<PathPointSelector, { type: "command" }>): void {
+  const allowedCommands = new Set(["M", "m", "L", "l", "C", "c", "Q", "q", "Z", "z"]);
+  if (selector.commands.length === 0) {
+    throw new InkMcpError("INVALID_INPUT", "Path point command selector must not be empty.");
+  }
+  const commands = new Set<string>();
+  for (const command of selector.commands) {
+    if (!allowedCommands.has(command)) {
+      throw new InkMcpError("INVALID_INPUT", "Path point command selector command is unsupported.", { command });
+    }
+    if (commands.has(command)) {
+      throw new InkMcpError("INVALID_INPUT", "Path point command selector must not contain duplicates.", {
+        command,
+      });
+    }
+    commands.add(command);
+  }
+}
+
 function validatePathPointNearestSelector(selector: Extract<PathPointSelector, { type: "nearest" }>): void {
   if (!Number.isFinite(selector.x) || !Number.isFinite(selector.y)) {
     throw new InkMcpError("INVALID_INPUT", "Path point nearest selector coordinates must be finite.", {
@@ -855,6 +881,24 @@ function resolvePathPointSelector(pathData: string, selector: PathPointSelector)
     if (selected.length === 0) {
       throw new InkMcpError("INVALID_INPUT", "Path point segment list selector matched no editable points.", {
         segmentIndexes: selector.segmentIndexes,
+        pointTypes: [...allowedPointTypes],
+      });
+    }
+    return selected;
+  }
+
+  if (selector.type === "command") {
+    const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+    const commands = new Set(selector.commands);
+    for (const segment of segments) {
+      if (!commands.has(segment.cmd)) continue;
+      for (const point of segment.availablePoints) {
+        if (allowedPointTypes.has(point)) selected.push({ segmentIndex: segment.index, point });
+      }
+    }
+    if (selected.length === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point command selector matched no editable points.", {
+        commands: selector.commands,
         pointTypes: [...allowedPointTypes],
       });
     }
