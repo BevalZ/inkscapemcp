@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend implementation guidelines and pre-development checklist for MCP tool changes."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Module ownership boundaries for core SVG ops, validation, and tool wrappers."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Typed validation failure and no-write error semantics."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Snapshot-first write, in-place edit, direct active-window sync, and path edit contracts."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Operation log expectations for successful write paths."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Existing Phase 1 path point transform selector contracts to extend consistently."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared thinking guide entry point for reuse/cross-layer checks."}

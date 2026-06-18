@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"Quality-check checklist for backend changes."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify failure paths remain explicit and no-write."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify path edit and in-place write contracts."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Verify operation log behavior remains compact and write-only."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Verify new selector contract is documented without conflicting with prior loops."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared quality thinking guide entry point."}
