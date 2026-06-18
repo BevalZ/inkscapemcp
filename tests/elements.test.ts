@@ -573,6 +573,50 @@ describe("element tools", () => {
     expect(history[0].snapshotId).toContain("transform_path_points");
   });
 
+  it("transforms nearest-selected path points with direct active-window attribute sync", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        pointSelector: {
+          type: "nearest",
+          x: 119,
+          y: 35,
+          pointTypes: ["c1", "end"],
+        },
+        transform: { type: "translate", dx: -4, dy: 2 },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "mouth", attributeName: "d", value: "M100 30 c14 6 31 1 41 -9" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "mouth",
+      selectedPointCount: 1,
+      selectedPoints: [{ segmentIndex: 1, point: "c1" }],
+      editedSegments: [1],
+      changed: { d: { from: "M100 30c18 4 31 1 41-9", to: "M100 30 c14 6 31 1 41 -9" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30 c14 6 31 1 41 -9"');
+    const history = await workspace.listHistory("sync-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
   it("rejects invalid point transforms without writing history", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
 
@@ -658,6 +702,33 @@ describe("element tools", () => {
         { workspace, inkscape, autoRefresh: { enabled: true } },
       ),
     ).rejects.toThrow("matched no editable points");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
+  });
+
+  it("rejects nearest-selected path transforms beyond maxDistance without writing history", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "sync-doc",
+          elementId: "mouth",
+          pointSelector: {
+            type: "nearest",
+            x: 119,
+            y: 35,
+            maxDistance: 0.5,
+          },
+          transform: { type: "translate", dx: -4, dy: 2 },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("maxDistance");
 
     expect(sync).not.toHaveBeenCalled();
     expect(companion).not.toHaveBeenCalled();

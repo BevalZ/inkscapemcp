@@ -106,6 +106,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 20 extended `transform_path_points` with `set_relative` for segment-base-relative endpoint/control-handle placement. It complements raw and absolute path-node query views, stores targets directly on relative commands, maps targets to `base + target` for absolute commands, applies edits in path order, and preserves the same validation, snapshot, diagnostics, log, and direct `d` sync boundary as other point transforms.
 - Phase 1 loop 21 extended `transform_path_points.pointSelector` with `{ type: "bbox" }` selection over absolute path-node coordinates. It keeps legacy explicit `{ points }` selectors valid, selects edge-inclusive `end`/`c1`/`c2` points from one existing path, rejects invalid or empty bbox selections before snapshot/write, and reuses the existing translate, `set_absolute`, `set_relative`, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 - Phase 1 loop 22 extended `transform_path_points.pointSelector` with `{ type: "segment_range" }` selection over inclusive path segment indexes. It keeps legacy explicit and bbox selectors valid, selects editable `end`/`c1`/`c2` points in path order, rejects invalid, out-of-range, or empty ranges before snapshot/write, and reuses the existing transform, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
+- Phase 1 loop 23 extended `transform_path_points.pointSelector` with `{ type: "nearest" }` selection over absolute path-node coordinates. It keeps legacy explicit, bbox, and segment range selectors valid, selects exactly one editable `end`/`c1`/`c2` point by squared Euclidean distance with path-order tie-breaks, supports optional `maxDistance`, rejects no-candidate or out-of-threshold selectors before snapshot/write, and reuses the existing transform, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 
 ### 4. Validation & Error Matrix
 
@@ -1238,6 +1239,105 @@ await transformPathPoints({
 ```
 
 Use segment range selection when the caller knows contiguous path segment indexes from `query_path_nodes`. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
+
+## Scenario: Path Point Nearest Selector Contract
+
+### 1. Scope / Trigger
+
+- Trigger: selecting the single editable endpoint/control handle closest to an absolute SVG coordinate before applying `transform_path_points`.
+- Scope: one existing path element in one workspace document, using the existing `translate`, `set_absolute`, and `set_relative` transform variants.
+- Out of scope: multi-point nearest selection, cross-path nearest selection, renderer hit testing, stroke-outline distance, curve projection distance, GUI node selection, selection previews, segment creation/deletion, and unsupported SVG path commands.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- Legacy explicit selector: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- Existing bbox selector: `{ type: "bbox", minX: number, minY: number, maxX: number, maxY: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- Existing segment range selector: `{ type: "segment_range", startSegmentIndex: number, endSegmentIndex: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- Nearest selector: `{ type: "nearest", x: number, y: number, pointTypes?: Array<"end" | "c1" | "c2">, maxDistance?: number }`
+- `x` and `y` are absolute SVG user-unit coordinates.
+- `pointTypes` defaults to `["end", "c1", "c2"]`.
+- `maxDistance`, when present, is a finite non-negative SVG user-unit distance.
+- Response includes resolved `selectedPointCount: 1`, `selectedPoints`, `editedSegments`, `transform`, and `changed.d.from` / `changed.d.to`.
+
+### 3. Contracts
+
+- Nearest selection is computed from absolute editable path-node coordinates produced by the same parser used by `query_path_nodes({ normalize: "absolute" })`.
+- The selector resolves exactly one editable point from the current path parser's supported points: `end`, `c1`, and `c2` on supported `M`, `L`, `C`, `Q`, and `Z` path commands, including relative variants.
+- Distance is squared Euclidean distance from `{ x, y }` to each candidate point; square roots are needed only for threshold reporting.
+- Tie-breaks are deterministic: lower segment index wins, and within a segment the existing parser `availablePoints` order wins.
+- Legacy `{ points }`, `{ type: "bbox" }`, and `{ type: "segment_range" }` callers remain valid.
+- After nearest resolution, transform behavior is identical to explicit one-point selection. `set_absolute` and `set_relative` must provide exactly one target point.
+- A nearest selector with no candidates for the requested `pointTypes` fails before snapshot/write.
+- A nearest selector whose nearest candidate is farther than `maxDistance` fails before snapshot/write.
+- Successful writes preserve the target path element id and object tree, snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+- Failed validation, missing path data, unsupported commands, no-candidate selectors, out-of-threshold selectors, or set-target mismatches leave `current.svg`, history, operation logs, operation-diff artifacts, and Inkscape refresh untouched.
+
+### 4. Validation & Error Matrix
+
+- Non-finite `x` or `y` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Empty `pointTypes` -> schema validation failure, no pre-pull or write.
+- Negative or non-finite `maxDistance` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- No editable candidate after `pointTypes` filtering -> `INVALID_INPUT`, no snapshot/write.
+- Nearest candidate farther than `maxDistance` -> `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- `set_absolute` or `set_relative` target count other than one after nearest resolution -> `INVALID_INPUT`, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: query a path in absolute mode, then move the control handle nearest `{ x: 118, y: 34 }` left without manually copying segment indexes.
+- Good: limit nearest selection to `pointTypes: ["end"]` when only endpoints should be moved.
+- Good: use `maxDistance` to prevent an approximate coordinate from accidentally moving a distant point.
+- Base: caller already knows exact segment indexes; use the legacy explicit `{ points }` selector.
+- Base: caller needs several nearby points; use the bbox or segment range selector until a future multi-nearest selector is defined.
+- Bad: using current Inkscape GUI node selection to decide the nearest point.
+- Bad: projecting to the nearest rendered curve position and then pretending it selected an editable path node.
+- Bad: replacing the whole SVG document because one nearby control point needs movement.
+
+### 6. Tests Required
+
+- Schema tests accept legacy explicit, bbox, segment range, and nearest selectors with defaulted `pointTypes`.
+- Schema tests reject non-finite nearest coordinates, empty `pointTypes`, and negative or non-finite `maxDistance`.
+- Core tests prove nearest selection uses absolute coordinates, selects exactly one point, honors `pointTypes`, and returns resolved `selectedPoints`.
+- Core tests prove deterministic tie-break by segment order and parser point order.
+- Core tests prove nearest `set_absolute` and `set_relative` require exactly one target after selector resolution.
+- Core tests prove no-candidate and out-of-threshold nearest selectors throw before returning a mutated SVG.
+- Tool-level tests prove successful nearest transforms snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests prove invalid nearest selectors leave `current.svg` and history unchanged and do not call Inkscape sync/refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: getCurrentGuiNodeSelection(),
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: {
+    type: "nearest",
+    x: 118,
+    y: 34,
+    pointTypes: ["c1", "end"],
+    maxDistance: 8,
+  },
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+Use nearest selection when the caller knows an approximate absolute SVG coordinate and wants one editable path point. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
 ## Phase Summary
 

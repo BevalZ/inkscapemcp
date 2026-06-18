@@ -275,6 +275,90 @@ describe("path tool validation", () => {
     ).toThrow("startSegmentIndex");
   });
 
+  it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "nearest",
+          x: 12,
+          y: 13,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "nearest",
+        x: 12,
+        y: 13,
+        pointTypes: ["end", "c1", "c2"],
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "nearest",
+          x: 12,
+          y: 13,
+          pointTypes: ["c1"],
+          maxDistance: 4,
+        },
+        transform: { type: "set_absolute", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "nearest",
+        pointTypes: ["c1"],
+        maxDistance: 4,
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "nearest",
+          x: Number.NaN,
+          y: 13,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "nearest",
+          x: 12,
+          y: 13,
+          pointTypes: [],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "nearest",
+          x: 12,
+          y: 13,
+          maxDistance: -1,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+  });
+
   it("accepts set_absolute and set_relative point transforms and rejects mismatched target counts", () => {
     expect(
       transformPathPointsSchema.parse({

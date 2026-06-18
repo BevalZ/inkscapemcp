@@ -125,6 +125,13 @@ export type PathPointSelector =
       startSegmentIndex: number;
       endSegmentIndex: number;
       pointTypes?: EditablePathPoint[];
+    }
+  | {
+      type: "nearest";
+      x: number;
+      y: number;
+      pointTypes?: EditablePathPoint[];
+      maxDistance?: number;
     };
 
 export interface TransformPathPointsResult extends PathDataEditResult {
@@ -602,6 +609,8 @@ function validateTransformPathPointsInput(input: {
     validatePathPointBboxSelector(input.pointSelector);
   } else if (input.pointSelector.type === "segment_range") {
     validatePathPointSegmentRangeSelector(input.pointSelector);
+  } else if (input.pointSelector.type === "nearest") {
+    validatePathPointNearestSelector(input.pointSelector);
   } else {
     validateExplicitPathPointSelector(input.pointSelector);
   }
@@ -701,6 +710,20 @@ function validatePathPointSegmentRangeSelector(
   }
 }
 
+function validatePathPointNearestSelector(selector: Extract<PathPointSelector, { type: "nearest" }>): void {
+  if (!Number.isFinite(selector.x) || !Number.isFinite(selector.y)) {
+    throw new InkMcpError("INVALID_INPUT", "Path point nearest selector coordinates must be finite.", {
+      x: selector.x,
+      y: selector.y,
+    });
+  }
+  if (selector.maxDistance !== undefined && (!Number.isFinite(selector.maxDistance) || selector.maxDistance < 0)) {
+    throw new InkMcpError("INVALID_INPUT", "Path point nearest selector maxDistance must be finite and non-negative.", {
+      maxDistance: selector.maxDistance,
+    });
+  }
+}
+
 function resolvePathPointSelector(pathData: string, selector: PathPointSelector): PathPointSelection[] {
   const selected: PathPointSelection[] = [];
   const segments = describeEditablePathData(pathData);
@@ -757,6 +780,44 @@ function resolvePathPointSelector(pathData: string, selector: PathPointSelector)
       });
     }
     return selected;
+  }
+
+  if (selector.type === "nearest") {
+    const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+    let nearest: { selection: PathPointSelection; distanceSquared: number } | undefined;
+    for (const segment of segments) {
+      for (const point of segment.availablePoints) {
+        if (!allowedPointTypes.has(point)) continue;
+        const absolutePoint = segment.absolutePoints[point];
+        if (!absolutePoint) continue;
+        const distanceSquared = (absolutePoint.x - selector.x) ** 2 + (absolutePoint.y - selector.y) ** 2;
+        if (!nearest || distanceSquared < nearest.distanceSquared) {
+          nearest = {
+            selection: { segmentIndex: segment.index, point },
+            distanceSquared,
+          };
+        }
+      }
+    }
+    if (!nearest) {
+      throw new InkMcpError("INVALID_INPUT", "Path point nearest selector matched no editable points.", {
+        x: selector.x,
+        y: selector.y,
+        pointTypes: [...allowedPointTypes],
+      });
+    }
+    const distance = Math.sqrt(nearest.distanceSquared);
+    if (selector.maxDistance !== undefined && distance > selector.maxDistance) {
+      throw new InkMcpError("INVALID_INPUT", "Path point nearest selector matched no point within maxDistance.", {
+        x: selector.x,
+        y: selector.y,
+        pointTypes: [...allowedPointTypes],
+        nearestPoint: nearest.selection,
+        distance,
+        maxDistance: selector.maxDistance,
+      });
+    }
+    return [nearest.selection];
   }
 
   return selector.points;

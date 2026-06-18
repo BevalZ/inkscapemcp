@@ -268,12 +268,21 @@ const pathPointSegmentRangeSelectorSchema = z.object({
   }
 });
 
+const pathPointNearestSelectorSchema = z.object({
+  type: z.literal("nearest"),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  pointTypes: z.array(z.enum(["end", "c1", "c2"])).min(1).default(["end", "c1", "c2"]),
+  maxDistance: z.number().finite().nonnegative().optional(),
+});
+
 export const transformPathPointsSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
   pointSelector: z.union([
     pathPointBboxSelectorSchema,
     pathPointSegmentRangeSelectorSchema,
+    pathPointNearestSelectorSchema,
     explicitPathPointSelectorSchema,
   ]),
   transform: z.discriminatedUnion("type", [
@@ -307,7 +316,11 @@ export const transformPathPointsSchema = z.object({
   }),
 }).superRefine((input, ctx) => {
   if (input.transform.type !== "set_absolute" && input.transform.type !== "set_relative") return;
-  if (input.pointSelector.type === "bbox" || input.pointSelector.type === "segment_range") return;
+  if (
+    input.pointSelector.type === "bbox" ||
+    input.pointSelector.type === "segment_range" ||
+    input.pointSelector.type === "nearest"
+  ) return;
   if (input.transform.points.length !== input.pointSelector.points.length) {
     ctx.addIssue({
       code: "custom",

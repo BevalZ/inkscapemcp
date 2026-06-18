@@ -652,6 +652,127 @@ describe("SVG operations", () => {
     ).toThrow("out of range");
   });
 
+  it("transforms the nearest editable path point by absolute coordinates", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "nearest",
+        x: 18,
+        y: 15,
+        pointTypes: ["end", "c1"],
+      },
+      transform: { type: "translate", dx: 1, dy: -2 },
+    });
+
+    expect(result.result).toMatchObject({
+      elementId: "editable-path",
+      previousD: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0",
+      nextD: "M10 10 l5 1 c3 1 4 5 6 7 q1 -2 3 0",
+      selectedPointCount: 1,
+      selectedPoints: [{ segmentIndex: 2, point: "c1" }],
+      editedSegments: [2],
+    });
+  });
+
+  it("breaks nearest point ties by path order and available point order", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 L20 10 L30 10",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "nearest",
+        x: 25,
+        y: 10,
+        pointTypes: ["end"],
+      },
+      transform: { type: "translate", dx: 0, dy: 2 },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 L20 12 L30 10",
+      selectedPointCount: 1,
+      selectedPoints: [{ segmentIndex: 1, point: "end" }],
+      editedSegments: [1],
+    });
+  });
+
+  it("applies set_absolute to the nearest selected point when one target is supplied", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 c2 3 4 5 6 7",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "nearest",
+        x: 11,
+        y: 12,
+        pointTypes: ["c1", "end"],
+      },
+      transform: { type: "set_absolute", points: [{ x: 20, y: 21 }] },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 c10 11 4 5 6 7",
+      selectedPointCount: 1,
+      selectedPoints: [{ segmentIndex: 1, point: "c1" }],
+    });
+  });
+
+  it("rejects nearest selectors that have no candidate point types", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          type: "nearest",
+          x: 1,
+          y: 1,
+          pointTypes: ["c2"],
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("matched no editable points");
+  });
+
+  it("rejects nearest selectors beyond maxDistance", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          type: "nearest",
+          x: 20,
+          y: 20,
+          maxDistance: 2,
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("maxDistance");
+  });
+
   it("rejects set_absolute when target point count does not match the selection", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
