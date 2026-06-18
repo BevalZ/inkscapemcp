@@ -17,6 +17,7 @@ Primary product plan: `docs/inkscape-mcp-plan.md`.
 | [Error Handling](./error-handling.md) | Error types, failure semantics, MCP responses | Filled |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns, tests | Filled |
 | [Logging Guidelines](./logging-guidelines.md) | Operation logs, log levels, sensitive data rules | Filled |
+| [Roadmap Memory](./roadmap-memory.md) | Three-phase advanced InkSMCP roadmap and durable planning contracts | Filled |
 
 ## Pre-Development Checklist
 
@@ -28,6 +29,7 @@ Before backend implementation:
 4. Read [Quality Guidelines](./quality-guidelines.md).
 5. Read [Logging Guidelines](./logging-guidelines.md).
 6. Read [Database Guidelines](./database-guidelines.md) before adding persistence or metadata.
+7. Read [Roadmap Memory](./roadmap-memory.md) before planning major sync, Inkscape workflow, or vectorization expansion.
 
 ## Quality Check
 
@@ -40,4 +42,3 @@ Before completing backend work:
 5. Confirm tests cover any changed validation, workspace, history, or Inkscape adapter behavior.
 
 **Language**: All documentation should be written in English.
-
