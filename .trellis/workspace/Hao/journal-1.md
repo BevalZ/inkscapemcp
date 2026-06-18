@@ -927,3 +927,36 @@ Added bbox point selection for transform_path_points, including schema validatio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Path point segment range selector
+
+**Date**: 2026-06-19
+**Task**: Path point segment range selector
+**Branch**: `main`
+
+### Summary
+
+Added inclusive segment_range point selection for transform_path_points, including schema validation, resolved path-order transforms, direct-sync tool coverage, README docs, and Phase 1 loop 22 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d2cb0d7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
