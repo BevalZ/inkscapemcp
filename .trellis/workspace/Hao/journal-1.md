@@ -298,7 +298,9 @@ Added three phase-specific debug and hardening loop documents with five-loop exe
 
 ### Main Changes
 
-(Add details)
+- Added `pointSelector.type: "nearest"` for `transform_path_points`.
+- Implemented absolute-coordinate nearest resolution with path-order tie-breaks and optional `maxDistance`.
+- Added schema, core, tool-level, README, and roadmap memory coverage.
 
 ### Git Commits
 
@@ -308,7 +310,12 @@ Added three phase-specific debug and hardening loop documents with five-loop exe
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `npx vitest run tests/path-validation.test.ts tests/svg-ops.test.ts tests/elements.test.ts`
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension\inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -948,6 +955,39 @@ Added inclusive segment_range point selection for transform_path_points, includi
 | Hash | Message |
 |------|---------|
 | `d2cb0d7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 26: Path point nearest selector
+
+**Date**: 2026-06-19
+**Task**: Path point nearest selector
+**Branch**: `main`
+
+### Summary
+
+Added nearest point selection for transform_path_points, including schema validation, deterministic path-order resolution, direct-sync tool coverage, README docs, and Phase 1 loop 23 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f12bb54` | (see git log) |
 
 ### Testing
 
