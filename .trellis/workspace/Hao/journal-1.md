@@ -19,7 +19,11 @@ Implemented Phase 2 tools for font import, Inkscape-backed path geometry, allowl
 
 ### Main Changes
 
-(Add details)
+- Added `conflictPolicy: "preview_only"` for `pull_gui_state`.
+- Added workspace-confined `merge-previews/` SVG and metadata artifacts.
+- Added stable merge conflict classes for attribute, text, delete, same-id add, order, and dependency-sensitive conflicts.
+- Preserved non-preview pull behavior and conservative `merge_non_overlapping` writes.
+- Updated README, backend quality guidelines, and roadmap memory.
 
 ### Git Commits
 
@@ -30,7 +34,11 @@ Implemented Phase 2 tools for font import, Inkscape-backed path geometry, allowl
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `npm run typecheck`
+- [OK] `npm test` - 20 files / 91 tests passed
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -194,6 +202,39 @@ Added three phase-specific debug and hardening loop documents with five-loop exe
 | Hash | Message |
 |------|---------|
 | `b5b8c5b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 7: Phase 1 Conflict Preview Loop
+
+**Date**: 2026-06-18
+**Task**: Phase 1 Conflict Preview Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented preview-only GUI pull conflict handling with merge preview artifacts, stable conflict classes, tests, and documentation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9d4e4ec` | (see git log) |
 
 ### Testing
 
