@@ -47,7 +47,7 @@ export function findSemanticElementMatches(
   limit = 5,
 ): ElementMatchCandidate[] {
   return fingerprintSvgElements(svg)
-    .map((fingerprint) => scoreCandidate(target, fingerprint))
+    .map((fingerprint) => scoreSemanticCandidate(target, fingerprint))
     .filter((candidate) => candidate.score > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, limit);
@@ -71,7 +71,10 @@ export function fingerprintElement(element: XmlElement): ElementSemanticFingerpr
   };
 }
 
-function scoreCandidate(target: ElementSemanticFingerprint, candidate: ElementSemanticFingerprint): ElementMatchCandidate {
+export function scoreSemanticCandidate(
+  target: ElementSemanticFingerprint,
+  candidate: ElementSemanticFingerprint,
+): ElementMatchCandidate {
   let score = 0;
   const reasons: string[] = [];
   if (target.elementId && candidate.elementId && target.elementId === candidate.elementId) {

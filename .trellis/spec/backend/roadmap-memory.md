@@ -94,6 +94,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 8 established `replay_operations` for deterministic controlled operation replay. Write mode requires an explicit `{ revision, contentHash }` baseline, pre-pulls active bidirectional GUI state before baseline comparison, rejects stale baselines before snapshot/write, rejects generated-id add operations, snapshots on success, writes operation diagnostics, logs a summary, and refreshes via the same attribute-sync or structural path as `apply_svg_operations`. Dry-run mode reuses the preview/diff envelope without workspace writes and may return stale-read warnings like other current-state read tools.
 - Phase 1 loop 9 established saved operation preview artifacts under `workspace/drawings/{docId}/operation-previews/`. `preview_svg_operations` and dry-run `replay_operations` may save candidate SVG plus JSON metadata/diff when `savePreview: true`, without mutating `current.svg`, document metadata, history, operation logs, operation-diff artifacts, or Inkscape GUI state. `list_operation_previews` returns compact metadata and `read_operation_preview` returns metadata plus full diff, with SVG content included only on request. Future apply-from-preview, operation groups, retention, and resource exposure should build on this artifact identity.
 - Phase 1 loop 10 established `apply_operation_preview` for explicitly applying saved operation preview artifacts. It requires `confirmApplyPreview: true`, accepts an explicit baseline or artifact baseline, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg` with the candidate SVG, writes operation-diff diagnostics, appends a compact operation log, and always uses structural companion-extension refresh instead of active-window attribute sync.
+- Phase 1 loop 11 established `propose_id_repairs` as a read-only id remapping proposal surface. It compares an explicit history snapshot/checkpoint to the current SVG after current-state read pre-pull, reuses semantic fingerprints and scoring, accepts only unique top candidates at or above `minConfidence`, reports low-confidence/ambiguous/no-candidate rejections when requested, and must not snapshot, update metadata, log operations, write artifacts, or refresh Inkscape.
 
 ### 4. Validation & Error Matrix
 
@@ -249,6 +250,86 @@ await applyOperationPreview({
 ```
 
 Use the apply-preview tool so artifact identity, bidirectional pre-pull, stale baseline rejection, snapshot-first write, operation diagnostics, and structural refresh all run through one guarded path.
+
+## Scenario: Id Repair Proposal Contract
+
+### 1. Scope / Trigger
+
+- Trigger: proposing likely element id remappings after ids changed or disappeared between a known baseline snapshot and current workspace SVG.
+- Scope: `propose_id_repairs` and the semantic fingerprint scoring it reuses.
+- Out of scope: applying repairs, proposal artifact persistence, automatic id rewriting, dependency/reference rewrites, visual scoring, and cross-document repair.
+
+### 2. Signatures
+
+- Tool: `propose_id_repairs({ docId, baselineSnapshotId, minConfidence?, includeRejected?, responseMode?, skipPrePull?, allowStaleRead? })`
+- `minConfidence`: integer `1..200`, default `70`.
+- `responseMode`: `"compact" | "full"`, default `"compact"`.
+
+### 3. Contracts
+
+- The tool is read-only: it must not create snapshots, update metadata, append operation logs, create operation-diff artifacts, save preview/proposal artifacts, or refresh Inkscape.
+- `baselineSnapshotId` is required and must resolve through the existing history snapshot reader under `workspace/drawings/{docId}/history/`.
+- Active bidirectional GUI state is pre-pulled through current-state read semantics before reading and comparing current SVG.
+- Baseline ids missing from current SVG are matched only against current ids that did not exist in the baseline.
+- Matching reuses semantic fingerprints and scoring signals: type, geometry, attributes, style, text, parent chain, sibling index, and approximate bbox.
+- A proposal is accepted only when the top candidate score is at least `minConfidence` and no other candidate has the same top score.
+- Rejected proposals are classified as `low_confidence`, `ambiguous_top_score`, or `no_candidate`.
+- Compact mode returns summary counts and accepted proposal summaries without full fingerprint payloads.
+- Full mode returns candidate and fingerprint details. `includeRejected` controls whether rejected proposal details are returned.
+
+### 4. Validation & Error Matrix
+
+- Unsafe `baselineSnapshotId` -> `INVALID_INPUT`, no write.
+- Missing `baselineSnapshotId` file -> `DOC_NOT_FOUND`, no write.
+- Active bidirectional pre-pull failure with stale reads disallowed -> sync/InkScape error, no write.
+- Active bidirectional pre-pull failure with `allowStaleRead: true` -> stale-read warning and current workspace comparison.
+- Top score below `minConfidence` -> rejected proposal with `low_confidence`.
+- More than one top candidate with the same score -> rejected proposal with `ambiguous_top_score`.
+- No current candidate with positive score -> rejected proposal with `no_candidate`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: baseline has `body`, current has equivalent `renamed-body`; the tool returns one accepted proposal with evidence reasons and no workspace mutation.
+- Base: current has two equally plausible renamed bodies; the tool returns an ambiguous rejection for later human/agent review.
+- Bad: automatically rewriting ids from proposal output without an explicit future `apply_id_repairs` tool.
+- Bad: matching missing baseline ids against unchanged current ids that already existed in the baseline.
+
+### 6. Tests Required
+
+- Core proposal test for strong renamed-id matches.
+- Core proposal test for low-confidence threshold rejection.
+- Core proposal test for tied top candidate ambiguity.
+- Tool test proving compact response omits full fingerprints/candidates.
+- Tool test proving full response includes candidate evidence/fingerprints.
+- Tool test proving `includeRejected` controls rejected output.
+- Tool test proving unsafe/missing snapshot ids reject without mutation.
+- Tool test proving bidirectional pre-pull happens before current comparison.
+- Tool test proving no snapshots, metadata changes, logs, operation diffs, preview artifacts, or refresh calls occur.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not repair ids directly from semantic matches.
+await replaceAttributeValues({
+  docId,
+  replacements: [{ attributeNames: ["id"], from: "renamed-body", to: "body" }],
+});
+```
+
+#### Correct
+
+```typescript
+const proposals = await proposeIdRepairs({
+  docId,
+  baselineSnapshotId,
+  minConfidence: 70,
+  includeRejected: true,
+});
+```
+
+Use proposal output for review and planning only. A future `apply_id_repairs` tool must own snapshot-first mutation, id conflict policy, and dependency/reference rewrites.
 
 ## Phase Summary
 

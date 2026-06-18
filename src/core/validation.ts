@@ -401,6 +401,16 @@ export const diffDocumentSnapshotsSchema = z.object({
   responseMode: z.enum(["compact", "full"]).default("compact"),
 });
 
+export const proposeIdRepairsSchema = z.object({
+  docId: docIdSchema,
+  baselineSnapshotId: z.string().min(1),
+  minConfidence: z.number().int().min(1).max(200).default(70),
+  includeRejected: z.boolean().default(false),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
+  skipPrePull: z.boolean().default(false),
+  allowStaleRead: z.boolean().default(false),
+});
+
 export const rollbackDocumentSchema = z.object({
   docId: docIdSchema,
   snapshotId: z.string().min(1),

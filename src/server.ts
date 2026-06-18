@@ -33,6 +33,7 @@ import {
   pathGeometryBaseSchema,
   pathGeometryMultiSchema,
   previewSvgOperationsSchema,
+  proposeIdRepairsSchema,
   pullGuiStateSchema,
   queryPathNodesSchema,
   recoverDocumentSchema,
@@ -63,6 +64,7 @@ import {
   listHistory,
   listOperationPreviews,
   previewSvgOperations,
+  proposeIdRepairs,
   queryDocument,
   readOperationPreview,
   recoverDocument,
@@ -493,6 +495,17 @@ export function createServer() {
       inputSchema: diffDocumentSnapshotsSchema,
     },
     (input) => runTool("diff_document_snapshots", () => diffDocumentSnapshots(input, ctx)),
+  );
+
+  server.registerTool(
+    "propose_id_repairs",
+    {
+      title: "Propose id repairs",
+      description:
+        "Compare a baseline history snapshot with the current SVG and return read-only semantic id remapping proposals.",
+      inputSchema: proposeIdRepairsSchema,
+    },
+    (input) => runTool("propose_id_repairs", () => proposeIdRepairs(input, ctx)),
   );
 
   server.registerTool(

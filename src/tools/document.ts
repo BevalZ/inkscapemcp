@@ -5,6 +5,7 @@ import * as z from "zod/v4";
 import { timestampId } from "../adapters/workspace.js";
 import { InkMcpError } from "../core/errors.js";
 import { createDocId } from "../core/ids.js";
+import { proposeIdRepairsFromSvg, type IdRepairProposalResult } from "../core/id-repair.js";
 import {
   createSvgDocument,
   getSvgRoot,
@@ -29,6 +30,7 @@ import {
   listHistorySchema,
   listOperationPreviewsSchema,
   previewSvgOperationsSchema,
+  proposeIdRepairsSchema,
   queryDocumentSchema,
   readOperationPreviewSchema,
   recoverDocumentSchema,
@@ -695,6 +697,79 @@ export async function diffDocumentSnapshots(input: z.infer<typeof diffDocumentSn
     };
   }
   return compact;
+}
+
+export async function proposeIdRepairs(input: z.infer<typeof proposeIdRepairsSchema>, ctx: ToolContext) {
+  const prePull = await prePullBeforeCurrentStateRead(ctx, input.docId, {
+    toolName: "propose_id_repairs",
+    skipPrePull: input.skipPrePull,
+    allowStaleRead: input.allowStaleRead,
+  });
+  const baseline = await ctx.workspace.readHistorySnapshot(input.docId, input.baselineSnapshotId);
+  const currentSvg = await ctx.workspace.readSvg(input.docId);
+  const result = proposeIdRepairsFromSvg({
+    baselineSvg: baseline.svg,
+    currentSvg,
+    minConfidence: input.minConfidence,
+  });
+  const compact = compactIdRepairProposal(input.docId, baseline, result, input.includeRejected);
+  const response =
+    input.responseMode === "full"
+      ? {
+          ...compact,
+          responseMode: "full" as const,
+          proposals: result.proposals,
+          ...(input.includeRejected ? { rejected: result.rejected } : {}),
+        }
+      : compact;
+
+  return {
+    ...response,
+    ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
+    ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
+  };
+}
+
+function compactIdRepairProposal(
+  docId: string,
+  baseline: { snapshotId: string; path: string },
+  result: IdRepairProposalResult,
+  includeRejected: boolean,
+) {
+  return {
+    ok: true,
+    docId,
+    responseMode: "compact" as const,
+    generatedAt: result.generatedAt,
+    baselineSnapshot: {
+      snapshotId: baseline.snapshotId,
+      path: baseline.path,
+    },
+    minConfidence: result.minConfidence,
+    summary: result.summary,
+    proposals: result.proposals.map((proposal) => ({
+      baselineElementId: proposal.baselineElementId,
+      proposedElementId: proposal.proposedElementId,
+      confidence: proposal.confidence,
+      reasons: proposal.reasons,
+      candidateCount: proposal.candidateCount,
+    })),
+    ...(includeRejected
+      ? {
+          rejected: result.rejected.map((proposal) => ({
+            baselineElementId: proposal.baselineElementId,
+            rejectReason: proposal.rejectReason,
+            topScore: proposal.topScore,
+            candidateCount: proposal.candidateCount,
+            candidates: proposal.candidates.map((candidate) => ({
+              elementId: candidate.elementId,
+              score: candidate.score,
+              reasons: candidate.reasons,
+            })),
+          })),
+        }
+      : {}),
+  };
 }
 
 export async function rollbackDocument(input: z.infer<typeof rollbackDocumentSchema>, ctx: ToolContext) {
