@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { InkMcpError } from "../core/errors.js";
 import { assertSafeDocId } from "../core/ids.js";
+import { diffSvgDocuments, type SvgOperationDiff } from "../core/svg-diff.js";
 import { parseFullSvg } from "../core/validation.js";
 import { contentHash } from "../core/sync-metadata.js";
 
@@ -21,6 +22,7 @@ export interface DocumentPaths {
   currentSvg: string;
   metadata: string;
   historyDir: string;
+  operationDiffsDir: string;
   operationsLog: string;
 }
 
@@ -54,6 +56,42 @@ export interface ConnectionConfig {
   baselineRevision: number;
   baselineContentHash: string;
   state: "connected" | "disconnected";
+  identitySummary?: ConnectionIdentitySummary;
+  capabilitySummary?: ConnectionCapabilitySummary;
+}
+
+export interface ConnectionIdentitySummary {
+  strength: "connection_only" | "runtime_document" | "window" | "full";
+  hasConnectionId: boolean;
+  hasRuntimeDocumentId: boolean;
+  hasWindowId: boolean;
+  ambiguous: boolean;
+}
+
+export interface ConnectionCapabilitySummary {
+  companionRefresh: "available_assumed" | "unknown";
+  guiPull: "available_assumed" | "not_applicable" | "unknown";
+  guiPush: "available_assumed" | "not_applicable" | "unknown";
+  sameWindowRefresh: "available_assumed" | "unknown";
+  manifestVersion: number;
+  extensionVersion?: string;
+}
+
+export interface GuiSyncPollingPreference {
+  docId: string;
+  connectionId: string;
+  intervalMs: number;
+  timeoutMs?: number;
+  persist: boolean;
+  createdAt: string;
+  updatedAt: string;
+  state: "enabled" | "disabled";
+}
+
+export interface OperationDiffArtifact {
+  path: string;
+  generatedAt: string;
+  summary: SvgOperationDiff["summary"];
 }
 
 export interface GuiPullManifest {
@@ -104,6 +142,7 @@ export class Workspace {
       currentSvg: this.resolveWithinWorkspace("drawings", docId, "current.svg"),
       metadata: this.resolveWithinWorkspace("drawings", docId, "metadata.json"),
       historyDir: this.resolveWithinWorkspace("drawings", docId, "history"),
+      operationDiffsDir: this.resolveWithinWorkspace("drawings", docId, "operation-diffs"),
       operationsLog: this.resolveWithinWorkspace("drawings", docId, "operations.log"),
     };
   }
@@ -158,6 +197,10 @@ export class Workspace {
 
   connectionBaselineSvgPath(connectionId: string): string {
     return this.resolveWithinWorkspace("connections", `${assertSafeConnectionId(connectionId)}.baseline.svg`);
+  }
+
+  guiSyncPollingPreferencePath(connectionId: string): string {
+    return this.resolveWithinWorkspace("connections", `${assertSafeConnectionId(connectionId)}.polling.json`);
   }
 
   guiPullSvgPath(requestId: string): string {
@@ -268,7 +311,7 @@ export class Workspace {
     docId: string,
     toolName: string,
     createNextSvg: (currentSvg: string, paths: DocumentPaths) => Promise<{ svg: string; result: T }> | { svg: string; result: T },
-  ): Promise<{ paths: DocumentPaths; snapshotPath: string; result: T }> {
+  ): Promise<{ paths: DocumentPaths; snapshotPath: string; result: T; operationDiff?: OperationDiffArtifact; operationDiffWarning?: Record<string, unknown> }> {
     return this.withDocumentWriteLock(docId, async (paths) => {
       await this.assertDocumentExists(paths);
       const currentSvg = await readFile(paths.currentSvg, "utf8");
@@ -277,7 +320,8 @@ export class Workspace {
       parseFullSvg(next.svg);
       await this.atomicWrite(paths.currentSvg, next.svg);
       await this.touchMetadata(paths, next.svg, "mcp");
-      return { paths, snapshotPath, result: next.result };
+      const operationDiff = await this.createOperationDiffArtifact(paths, toolName, currentSvg, next.svg);
+      return { paths, snapshotPath, result: next.result, ...operationDiff };
     });
   }
 
@@ -288,7 +332,7 @@ export class Workspace {
     conflictPolicy: "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping",
     nextSvg: string,
     result: T,
-  ): Promise<{ paths: DocumentPaths; snapshotPath: string; result: T; wrote: boolean }> {
+  ): Promise<{ paths: DocumentPaths; snapshotPath: string; result: T; wrote: boolean; operationDiff?: OperationDiffArtifact; operationDiffWarning?: Record<string, unknown> }> {
     return this.withDocumentWriteLock(docId, async (paths) => {
       await this.assertDocumentExists(paths);
       const currentSvg = await readFile(paths.currentSvg, "utf8");
@@ -308,7 +352,8 @@ export class Workspace {
       parseFullSvg(nextSvg);
       await this.atomicWrite(paths.currentSvg, nextSvg);
       await this.touchMetadata(paths, nextSvg, "gui");
-      return { paths, snapshotPath, result, wrote: true };
+      const operationDiff = await this.createOperationDiffArtifact(paths, toolName, currentSvg, nextSvg);
+      return { paths, snapshotPath, result, wrote: true, ...operationDiff };
     });
   }
 
@@ -349,6 +394,7 @@ export class Workspace {
       parseFullSvg(restoredSvg);
       await this.atomicWrite(paths.currentSvg, restoredSvg);
       await this.touchMetadata(paths, restoredSvg, "mcp");
+      await this.createOperationDiffArtifact(paths, "rollback_document", currentSvg, restoredSvg);
       return { paths, snapshotPath, restoredPath };
     });
   }
@@ -367,6 +413,48 @@ export class Workspace {
   async writeConnection(config: ConnectionConfig): Promise<void> {
     await this.ensureReady();
     await this.atomicWrite(this.connectionPath(config.connectionId), `${JSON.stringify(config, null, 2)}\n`);
+  }
+
+  async writeGuiSyncPollingPreference(preference: GuiSyncPollingPreference): Promise<void> {
+    await this.ensureReady();
+    await this.atomicWrite(this.guiSyncPollingPreferencePath(preference.connectionId), `${JSON.stringify(preference, null, 2)}\n`);
+  }
+
+  async readGuiSyncPollingPreference(connectionId: string): Promise<GuiSyncPollingPreference> {
+    await this.ensureReady();
+    const raw = await readFile(this.guiSyncPollingPreferencePath(connectionId), "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new InkMcpError("SYNC_NOT_CONNECTED", "GUI sync polling preference was not found.", { connectionId });
+      }
+      throw error;
+    });
+    return JSON.parse(raw) as GuiSyncPollingPreference;
+  }
+
+  async listGuiSyncPollingPreferences(): Promise<GuiSyncPollingPreference[]> {
+    await this.ensureReady();
+    const entries = await readdir(this.paths.connectionsDir, { withFileTypes: true });
+    return Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".polling.json"))
+        .map(async (entry) => JSON.parse(await readFile(path.join(this.paths.connectionsDir, entry.name), "utf8")) as GuiSyncPollingPreference),
+    );
+  }
+
+  async disableGuiSyncPollingPreference(connectionId: string): Promise<GuiSyncPollingPreference | undefined> {
+    const existing = await this.readGuiSyncPollingPreference(connectionId).catch((error) => {
+      if (error instanceof InkMcpError && error.code === "SYNC_NOT_CONNECTED") return undefined;
+      throw error;
+    });
+    if (!existing) return undefined;
+    const now = new Date().toISOString();
+    const next: GuiSyncPollingPreference = {
+      ...existing,
+      state: "disabled",
+      updatedAt: now,
+    };
+    await this.writeGuiSyncPollingPreference(next);
+    return next;
   }
 
   async writeConnectionBaselineSvg(connectionId: string, svg: string): Promise<void> {
@@ -500,6 +588,35 @@ export class Workspace {
     const snapshotPath = path.join(paths.historyDir, `${timestampId()}-${toolName}.svg`);
     await this.atomicWrite(snapshotPath, svg);
     return snapshotPath;
+  }
+
+  private async createOperationDiffArtifact(
+    paths: DocumentPaths,
+    toolName: string,
+    beforeSvg: string,
+    afterSvg: string,
+  ): Promise<{ operationDiff?: OperationDiffArtifact; operationDiffWarning?: Record<string, unknown> }> {
+    try {
+      await mkdir(paths.operationDiffsDir, { recursive: true });
+      const diff = diffSvgDocuments(beforeSvg, afterSvg);
+      const diffPath = path.join(paths.operationDiffsDir, `${timestampId()}-${toolName}.json`);
+      await this.atomicWrite(diffPath, `${JSON.stringify(diff, null, 2)}\n`);
+      return {
+        operationDiff: {
+          path: diffPath,
+          generatedAt: diff.generatedAt,
+          summary: diff.summary,
+        },
+      };
+    } catch (error) {
+      return {
+        operationDiffWarning: {
+          code: "OPERATION_DIFF_FAILED",
+          message: "SVG write succeeded, but operation diff artifact generation failed.",
+          details: { message: error instanceof Error ? error.message : String(error) },
+        },
+      };
+    }
   }
 
   private async touchMetadata(paths: DocumentPaths, svg: string, lastWriter: WorkspaceWriter): Promise<void> {

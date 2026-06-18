@@ -50,6 +50,8 @@ describe("bidirectional GUI sync", () => {
     );
 
     expect(result).toMatchObject({ ok: true, docId: "fish" });
+    expect(result.identitySummary).toMatchObject({ strength: "full", ambiguous: false });
+    expect(result.capabilitySummary).toMatchObject({ guiPush: "available_assumed", manifestVersion: 1 });
     const svg = await workspace.readSvg("fish");
     expect(svg).toContain("inksmcp-sync-metadata");
     const connection = await workspace.readConnection(result.connection.connectionId);
@@ -60,6 +62,8 @@ describe("bidirectional GUI sync", () => {
       runtimeDocumentId: "runtime-fish",
       windowId: "window-a",
       baselineRevision: 2,
+      identitySummary: { strength: "full" },
+      capabilitySummary: { guiPull: "available_assumed" },
     });
   });
 
@@ -471,12 +475,27 @@ describe("bidirectional GUI sync", () => {
 
     try {
       const started = await startGuiSyncPolling(
-        { docId: "fish", connectionId: connected.connection.connectionId, intervalMs: 250 },
+        { docId: "fish", connectionId: connected.connection.connectionId, intervalMs: 250, persist: true },
         ctx,
       );
-      expect(started).toMatchObject({ ok: true, alreadyRunning: false });
+      expect(started).toMatchObject({
+        ok: true,
+        alreadyRunning: false,
+        polling: {
+          persistent: true,
+          skippedPullCount: 0,
+          conflictCount: 0,
+          identitySummary: { strength: "window" },
+        },
+      });
       await pullStarted;
       await delay(350);
+      const inFlightStatus = await getGuiSyncStatus({ connectionId: connected.connection.connectionId, includeHistory: true }, ctx);
+      expect(inFlightStatus.polling[0]).toMatchObject({ skippedPullCount: expect.any(Number), persistent: true });
+      expect(inFlightStatus.persistedPolling?.[0]).toMatchObject({
+        connectionId: connected.connection.connectionId,
+        state: "enabled",
+      });
       expect(inkscape.pushGuiStateWithCompanionExtension).toHaveBeenCalledTimes(1);
 
       releasePull?.();
@@ -626,6 +645,27 @@ describe("bidirectional GUI sync", () => {
     const connection = await workspace.readConnection(connected.connection.connectionId);
     expect(connection.baselineRevision).toBe(metadata.revision);
     expect(connection.baselineContentHash).toBe(metadata.contentHash);
+  });
+
+  it("writes operation diff artifacts for successful workspace edits", async () => {
+    const result = await addElement(
+      {
+        docId: "fish",
+        type: "circle",
+        attributes: { id: "eye", cx: 30, cy: 20, r: 2 },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result.operationDiff).toMatchObject({
+      path: expect.stringContaining("operation-diffs"),
+      summary: {
+        addedElementCount: 1,
+        removedElementCount: 0,
+        changedElementCount: 1,
+      },
+    });
+    await expect(readFile(result.operationDiff?.path as string, "utf8")).resolves.toContain('"eye"');
   });
 });
 

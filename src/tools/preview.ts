@@ -238,14 +238,53 @@ export async function refreshInInkscape(input: z.infer<typeof refreshInInkscapeS
 
 export async function diagnoseInkscapeGui(input: z.infer<typeof diagnoseInkscapeGuiSchema>, ctx: ToolContext) {
   const diagnostics = await ctx.inkscape.diagnoseGui({ timeoutMs: input.timeoutMs });
+  const companionReady = Boolean(diagnostics.binaryAvailable && diagnostics.companionExtensionInstalled);
+  const bidirectionalReady = Boolean(companionReady && diagnostics.pushExtensionInstalled);
+  const remediation = diagnosticRemediation(diagnostics);
   return {
     ok: true,
     ...(input.docId ? { docId: input.docId } : {}),
     diagnostics,
+    capabilityReadiness: {
+      sameWindowRefresh: companionReady ? "ready" : "not_ready",
+      bidirectionalGuiPull: bidirectionalReady ? "ready" : "not_ready",
+      defaultFileRebase: "disabled",
+    },
+    remediation,
     automationBoundary: {
       primaryPath: "companion_extension_or_active_window_actions",
       mouseKeyboardAutomation: "diagnostic_fallback_only",
       mutatesSvg: false,
     },
   };
+}
+
+function diagnosticRemediation(
+  diagnostics: Awaited<ReturnType<ToolContext["inkscape"]["diagnoseGui"]>>,
+): Array<{ code: string; message: string }> {
+  const steps: Array<{ code: string; message: string }> = [];
+  if (!diagnostics.binaryAvailable) {
+    steps.push({
+      code: "INSTALL_OR_CONFIGURE_INKSCAPE",
+      message: "Install Inkscape or set INKSCAPE_BIN to the local Inkscape executable.",
+    });
+    return steps;
+  }
+  if (!diagnostics.companionExtensionInstalled || !diagnostics.pushExtensionInstalled) {
+    steps.push({
+      code: "INSTALL_COMPANION_EXTENSION",
+      message: "Run npm run install:inkscape-extension, then restart Inkscape so extension actions are loaded.",
+    });
+  }
+  if (diagnostics.companionExtensionInstalled && diagnostics.pushExtensionInstalled) {
+    steps.push({
+      code: "OPEN_WORKSPACE_CURRENT_SVG",
+      message: "Open workspace/drawings/{docId}/current.svg in Inkscape before relying on automatic same-window refresh or bidirectional sync.",
+    });
+  }
+  steps.push({
+    code: "KEEP_FILE_REBASE_DISABLED",
+    message: "Keep file-rebase disabled by default; use companion extension refresh or active-window attribute sync instead.",
+  });
+  return steps;
 }

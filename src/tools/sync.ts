@@ -1,7 +1,14 @@
 import * as z from "zod/v4";
 import { randomUUID } from "node:crypto";
 
-import type { ConnectionConfig, DocumentPaths, GuiPullManifest, StoredMetadata } from "../adapters/workspace.js";
+import type {
+  ConnectionCapabilitySummary,
+  ConnectionConfig,
+  ConnectionIdentitySummary,
+  DocumentPaths,
+  GuiPullManifest,
+  StoredMetadata,
+} from "../adapters/workspace.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import {
   connectInkscapeWindowSchema,
@@ -40,12 +47,23 @@ export interface GuiSyncPollStatus {
   updatedAt: string;
   lastAttemptAt?: string;
   lastSuccessAt?: string;
+  lastSkippedAt?: string;
+  lastConflictAt?: string;
   lastErrorAt?: string;
   inFlight: boolean;
   pullCount: number;
+  skippedPullCount: number;
+  conflictCount: number;
   errorCount: number;
+  consecutiveErrorCount: number;
+  backoffUntil?: string;
+  persistent: boolean;
   lastPull?: Record<string, unknown>;
+  lastSkip?: Record<string, unknown>;
+  lastConflict?: Record<string, unknown>;
   lastError?: Record<string, unknown>;
+  identitySummary?: ConnectionIdentitySummary;
+  capabilitySummary?: ConnectionCapabilitySummary;
 }
 
 interface GuiSyncPollEntry {
@@ -55,10 +73,11 @@ interface GuiSyncPollEntry {
 
 export interface GuiSyncPollRegistry {
   entries: Map<string, GuiSyncPollEntry>;
+  persistedLoaded: boolean;
 }
 
 export function createGuiSyncPollRegistry(): GuiSyncPollRegistry {
-  return { entries: new Map() };
+  return { entries: new Map(), persistedLoaded: false };
 }
 
 export async function connectInkscapeWindow(input: z.infer<typeof connectInkscapeWindowSchema>, ctx: ToolContext) {
@@ -94,6 +113,8 @@ export async function connectInkscapeWindow(input: z.infer<typeof connectInkscap
     baselineContentHash: metadata.contentHash,
     state: "connected",
   };
+  connection.identitySummary = buildIdentitySummary(connection);
+  connection.capabilitySummary = buildCapabilitySummary(connection);
 
   const write = await ctx.workspace.writeSvgWithSnapshot(input.docId, "connect_inkscape_window", (currentSvg) => ({
     svg: injectInkMcpMarker(currentSvg, {
@@ -125,14 +146,18 @@ export async function connectInkscapeWindow(input: z.infer<typeof connectInkscap
     status: "ok",
   });
   const guiRefresh = await refreshConnectedWindow(ctx, input.docId, input.timeoutMs);
+  const warnings = [write.operationDiffWarning, guiRefresh.warning].filter(Boolean);
   return {
     ok: true,
     docId: input.docId,
     connection: storedConnection,
+    identitySummary: storedConnection.identitySummary,
+    capabilitySummary: storedConnection.capabilitySummary,
     currentSvgPath: write.paths.currentSvg,
     snapshotPath: write.snapshotPath,
+    ...(write.operationDiff ? { operationDiff: write.operationDiff } : {}),
     ...(guiRefresh.guiRefresh ? { guiRefresh: guiRefresh.guiRefresh } : {}),
-    ...(guiRefresh.warning ? { warnings: [guiRefresh.warning] } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -194,7 +219,14 @@ export async function pullGuiState(input: z.infer<typeof pullGuiStateSchema>, ct
   const candidateSvg = merge?.ok && merge.svg ? merge.svg : pulledSvg;
   const writePolicy = input.conflictPolicy === "merge_non_overlapping" && merge?.ok ? "merge_non_overlapping" : input.conflictPolicy;
 
-  let write: { paths: DocumentPaths; snapshotPath: string; result: { idDiff: typeof idDiff }; wrote: boolean };
+  let write: {
+    paths: DocumentPaths;
+    snapshotPath: string;
+    result: { idDiff: typeof idDiff };
+    wrote: boolean;
+    operationDiff?: { path: string; generatedAt: string; summary: Record<string, unknown> };
+    operationDiffWarning?: Record<string, unknown>;
+  };
   try {
     write = await ctx.workspace.writeGuiPulledSvgWithSnapshot(
       input.docId,
@@ -237,6 +269,17 @@ export async function pullGuiState(input: z.infer<typeof pullGuiStateSchema>, ct
       status: "ok",
     });
   }
+  const warnings = [
+    ...(write.operationDiffWarning ? [write.operationDiffWarning] : []),
+    ...(!write.wrote && input.conflictPolicy === "prefer_workspace"
+      ? [
+          {
+            code: "SYNC_PREFER_WORKSPACE",
+            message: "GUI state was validated but workspace state was kept due to conflictPolicy=prefer_workspace.",
+          },
+        ]
+      : []),
+  ];
   return {
     ok: true,
     docId: input.docId,
@@ -245,25 +288,19 @@ export async function pullGuiState(input: z.infer<typeof pullGuiStateSchema>, ct
     wrote: write.wrote,
     currentSvgPath: write.paths.currentSvg,
     snapshotPath: write.snapshotPath || undefined,
+    ...(write.operationDiff ? { operationDiff: write.operationDiff } : {}),
     rawPulledSvgPath: ctx.workspace.guiPullSvgPath(requestId),
     manifestPath: ctx.workspace.guiPullManifestPath(requestId),
     idDiff,
     ...(conflictReport.hasConflict ? { conflictReport } : {}),
     ...(merge ? { merge } : {}),
     inkscape: { binaryPath: inkscape.binaryPath, exitCode: inkscape.exitCode },
-    warnings:
-      write.wrote || input.conflictPolicy !== "prefer_workspace"
-        ? undefined
-        : [
-            {
-              code: "SYNC_PREFER_WORKSPACE",
-              message: "GUI state was validated but workspace state was kept due to conflictPolicy=prefer_workspace.",
-            },
-          ],
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
 export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPollingSchema>, ctx: ToolContext) {
+  await ensurePersistedPollingLoaded(ctx);
   const connection = await resolveActiveConnection(ctx, input.docId, input.connectionId);
   if (connection.syncMode !== "bidirectional") {
     throw new InkMcpError("SYNC_NOT_CONNECTED", "Connection is not in bidirectional sync mode.", {
@@ -282,6 +319,7 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
   }
 
   const intervalMs = input.intervalMs ?? positiveEnvInt("INKSMCP_GUI_POLL_INTERVAL_MS") ?? defaultPollingIntervalMs;
+  const persistent = input.persist ?? false;
   const now = new Date().toISOString();
   const status: GuiSyncPollStatus = {
     pollingId: createConnectionId("poll"),
@@ -294,7 +332,13 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
     updatedAt: now,
     inFlight: false,
     pullCount: 0,
+    skippedPullCount: 0,
+    conflictCount: 0,
     errorCount: 0,
+    consecutiveErrorCount: 0,
+    persistent,
+    identitySummary: connection.identitySummary ?? buildIdentitySummary(connection),
+    capabilitySummary: connection.capabilitySummary ?? buildCapabilitySummary(connection),
   };
   const entry: GuiSyncPollEntry = {
     status,
@@ -304,6 +348,18 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
   };
   entry.timer.unref?.();
   registry.entries.set(connection.connectionId, entry);
+  if (persistent) {
+    await ctx.workspace.writeGuiSyncPollingPreference({
+      docId: connection.docId,
+      connectionId: connection.connectionId,
+      intervalMs,
+      timeoutMs: input.timeoutMs,
+      persist: true,
+      createdAt: now,
+      updatedAt: now,
+      state: "enabled",
+    });
+  }
   void runPollingTick(ctx, connection.docId, connection.connectionId);
   return {
     ok: true,
@@ -313,9 +369,18 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
 }
 
 export async function stopGuiSyncPolling(input: z.infer<typeof stopGuiSyncPollingSchema>, ctx: ToolContext) {
+  await ensurePersistedPollingLoaded(ctx);
   const registry = getPollRegistry(ctx);
   const targets = pollingTargets(registry, input);
-  const stopped = targets.map((entry) => stopPollEntry(registry, entry.status.connectionId));
+  const stopped = await Promise.all(
+    targets.map(async (entry) => {
+      const status = stopPollEntry(registry, entry.status.connectionId);
+      if (status.persistent) {
+        await ctx.workspace.disableGuiSyncPollingPreference(entry.status.connectionId);
+      }
+      return status;
+    }),
+  );
   return {
     ok: true,
     stopped,
@@ -323,11 +388,20 @@ export async function stopGuiSyncPolling(input: z.infer<typeof stopGuiSyncPollin
 }
 
 export async function getGuiSyncStatus(input: z.infer<typeof getGuiSyncStatusSchema>, ctx: ToolContext) {
+  await ensurePersistedPollingLoaded(ctx);
   const registry = getPollRegistry(ctx);
   const statuses = pollingTargets(registry, input).map((entry) => clonePollStatus(entry.status));
+  const persistedPolling = input.includeHistory
+    ? (await ctx.workspace.listGuiSyncPollingPreferences()).filter((preference) => {
+        if (input.connectionId && preference.connectionId !== input.connectionId) return false;
+        if (input.docId && preference.docId !== input.docId) return false;
+        return true;
+      })
+    : undefined;
   return {
     ok: true,
     polling: statuses,
+    ...(persistedPolling ? { persistedPolling } : {}),
   };
 }
 
@@ -561,6 +635,30 @@ function connectionIdentitySummary(connection: Pick<ConnectionConfig, "connectio
   };
 }
 
+export function buildIdentitySummary(
+  connection: Pick<ConnectionConfig, "connectionId" | "runtimeDocumentId" | "windowId">,
+): ConnectionIdentitySummary {
+  const hasRuntimeDocumentId = Boolean(connection.runtimeDocumentId);
+  const hasWindowId = Boolean(connection.windowId);
+  return {
+    strength: hasRuntimeDocumentId && hasWindowId ? "full" : hasWindowId ? "window" : hasRuntimeDocumentId ? "runtime_document" : "connection_only",
+    hasConnectionId: Boolean(connection.connectionId),
+    hasRuntimeDocumentId,
+    hasWindowId,
+    ambiguous: !hasRuntimeDocumentId && !hasWindowId,
+  };
+}
+
+export function buildCapabilitySummary(connection: Pick<ConnectionConfig, "syncMode">): ConnectionCapabilitySummary {
+  return {
+    companionRefresh: "available_assumed",
+    guiPull: connection.syncMode === "bidirectional" ? "available_assumed" : "not_applicable",
+    guiPush: connection.syncMode === "bidirectional" ? "available_assumed" : "not_applicable",
+    sameWindowRefresh: "available_assumed",
+    manifestVersion: 1,
+  };
+}
+
 function getPollRegistry(ctx: ToolContext): GuiSyncPollRegistry {
   if (!ctx.guiSyncPolling) {
     ctx.guiSyncPolling = createGuiSyncPollRegistry();
@@ -568,10 +666,62 @@ function getPollRegistry(ctx: ToolContext): GuiSyncPollRegistry {
   return ctx.guiSyncPolling;
 }
 
+async function ensurePersistedPollingLoaded(ctx: ToolContext): Promise<void> {
+  const registry = getPollRegistry(ctx);
+  if (registry.persistedLoaded) return;
+  registry.persistedLoaded = true;
+  const preferences = await ctx.workspace.listGuiSyncPollingPreferences().catch(() => []);
+  for (const preference of preferences) {
+    if (!preference.persist || preference.state !== "enabled" || registry.entries.has(preference.connectionId)) continue;
+    const connection = await ctx.workspace.readConnection(preference.connectionId).catch(() => undefined);
+    if (!connection || connection.state !== "connected" || connection.syncMode !== "bidirectional" || !isConnectionActive(connection)) continue;
+    const status = createPollStatusFromPreference(preference, connection);
+    const entry: GuiSyncPollEntry = {
+      status,
+      timer: setInterval(() => {
+        void runPollingTick(ctx, connection.docId, connection.connectionId);
+      }, status.intervalMs),
+    };
+    entry.timer.unref?.();
+    registry.entries.set(connection.connectionId, entry);
+  }
+}
+
+function createPollStatusFromPreference(preference: import("../adapters/workspace.js").GuiSyncPollingPreference, connection: ConnectionConfig): GuiSyncPollStatus {
+  const now = new Date().toISOString();
+  return {
+    pollingId: createConnectionId("poll"),
+    docId: preference.docId,
+    connectionId: preference.connectionId,
+    state: "running",
+    intervalMs: preference.intervalMs,
+    timeoutMs: preference.timeoutMs,
+    startedAt: now,
+    updatedAt: now,
+    inFlight: false,
+    pullCount: 0,
+    skippedPullCount: 0,
+    conflictCount: 0,
+    errorCount: 0,
+    consecutiveErrorCount: 0,
+    persistent: true,
+    identitySummary: connection.identitySummary ?? buildIdentitySummary(connection),
+    capabilitySummary: connection.capabilitySummary ?? buildCapabilitySummary(connection),
+  };
+}
+
 async function runPollingTick(ctx: ToolContext, docId: string, connectionId: string): Promise<void> {
   const registry = getPollRegistry(ctx);
   const entry = registry.entries.get(connectionId);
-  if (!entry || entry.status.state !== "running" || entry.status.inFlight) return;
+  if (!entry || entry.status.state !== "running") return;
+  if (entry.status.inFlight) {
+    recordSkippedPoll(entry.status, "in_flight");
+    return;
+  }
+  if (entry.status.backoffUntil && Date.parse(entry.status.backoffUntil) > Date.now()) {
+    recordSkippedPoll(entry.status, "backoff");
+    return;
+  }
 
   entry.status.inFlight = true;
   entry.status.lastAttemptAt = new Date().toISOString();
@@ -587,6 +737,8 @@ async function runPollingTick(ctx: ToolContext, docId: string, connectionId: str
       ctx,
     );
     entry.status.pullCount += 1;
+    entry.status.consecutiveErrorCount = 0;
+    entry.status.backoffUntil = undefined;
     entry.status.lastSuccessAt = new Date().toISOString();
     entry.status.updatedAt = entry.status.lastSuccessAt;
     entry.status.lastPull = {
@@ -594,12 +746,24 @@ async function runPollingTick(ctx: ToolContext, docId: string, connectionId: str
       wrote: result.wrote,
       idDiff: result.idDiff,
     };
+    entry.status.lastConflict = undefined;
     entry.status.lastError = undefined;
   } catch (error) {
+    const payload = toErrorPayload(error);
+    if (payload.code === "SYNC_CONFLICT") {
+      entry.status.conflictCount += 1;
+      entry.status.lastConflictAt = new Date().toISOString();
+      entry.status.lastConflict = payload;
+    }
     entry.status.errorCount += 1;
+    entry.status.consecutiveErrorCount += 1;
     entry.status.lastErrorAt = new Date().toISOString();
     entry.status.updatedAt = entry.status.lastErrorAt;
-    entry.status.lastError = toErrorPayload(error);
+    entry.status.lastError = payload;
+    if (entry.status.consecutiveErrorCount >= 3) {
+      const backoffMs = Math.min(entry.status.intervalMs * entry.status.consecutiveErrorCount, 30_000);
+      entry.status.backoffUntil = new Date(Date.now() + backoffMs).toISOString();
+    }
   } finally {
     const latest = registry.entries.get(connectionId);
     if (latest === entry) {
@@ -607,6 +771,17 @@ async function runPollingTick(ctx: ToolContext, docId: string, connectionId: str
       entry.status.updatedAt = new Date().toISOString();
     }
   }
+}
+
+function recordSkippedPoll(status: GuiSyncPollStatus, reason: "in_flight" | "backoff"): void {
+  const now = new Date().toISOString();
+  status.skippedPullCount += 1;
+  status.lastSkippedAt = now;
+  status.updatedAt = now;
+  status.lastSkip = {
+    reason,
+    ...(reason === "backoff" && status.backoffUntil ? { backoffUntil: status.backoffUntil } : {}),
+  };
 }
 
 function pollingTargets(
@@ -638,7 +813,11 @@ function clonePollStatus(status: GuiSyncPollStatus): GuiSyncPollStatus {
   return {
     ...status,
     ...(status.lastPull ? { lastPull: { ...status.lastPull } } : {}),
+    ...(status.lastSkip ? { lastSkip: { ...status.lastSkip } } : {}),
+    ...(status.lastConflict ? { lastConflict: { ...status.lastConflict } } : {}),
     ...(status.lastError ? { lastError: { ...status.lastError } } : {}),
+    ...(status.identitySummary ? { identitySummary: { ...status.identitySummary } } : {}),
+    ...(status.capabilitySummary ? { capabilitySummary: { ...status.capabilitySummary } } : {}),
   };
 }
 

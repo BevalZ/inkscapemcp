@@ -78,6 +78,7 @@ Phase 3 candidate tool families:
 - Vectorization must write reviewable artifacts first and must not replace or insert into the current document unless a separate explicit apply operation is called.
 - Query and diagnostic tools must be read-only and must not snapshot, write operation logs, or refresh Inkscape unless explicitly documented.
 - Heavy tools should support compact responses and resource/artifact references to reduce token use.
+- Phase 1 loop 1 established compact query responses, read-only dependency summaries, operation-diff artifacts after successful writes, persisted explicit polling preferences, identity/capability summaries, and GUI diagnostic readiness/remediation output. Future loops should build on these artifacts instead of inventing parallel status or diff formats.
 
 ### 4. Validation & Error Matrix
 
@@ -205,4 +206,3 @@ Key work:
 ## Implementation Rule
 
 For all future roadmap tasks, create or update a Trellis PRD before implementation. The PRD should reference the relevant phase document and this memory file, then narrow the scope to one verifiable vertical slice.
-

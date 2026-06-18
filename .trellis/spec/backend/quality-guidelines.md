@@ -93,6 +93,7 @@ it("rejects script tags in raw SVG fragments", () => {
   - `workspace/drawings/{docId}/current.svg`
   - `workspace/drawings/{docId}/metadata.json`
   - `workspace/drawings/{docId}/history/`
+  - `workspace/drawings/{docId}/operation-diffs/`
   - `workspace/drawings/{docId}/operations.log`
   - `workspace/archive/`
 - Tool response shape:
@@ -277,7 +278,8 @@ Only values from the allowlist may reach Inkscape. Geometry-specific tools shoul
 - Path data tools accept either raw SVG `d` strings or structured segment arrays. Structured segment arrays currently support `M`, `L`, `C`, `Q`, and `Z`. Raw path data must be validated for command/parameter shape before save.
 - `edit_path_nodes` applies compact edits to an existing path's `d` attribute. It may move endpoints/control points, insert structured `M`/`L`/`C`/`Q`/`Z` segments, or delete segments. It should reject path data that cannot be safely round-tripped through the supported command set, such as arcs or shorthand curves.
 - `query_path_nodes` is read-only. It returns segment indexes, command names, raw point values, absolute point positions, and available point names for the same supported command set used by `edit_path_nodes`. It must not create snapshots, write operation logs, or trigger Inkscape refresh.
-- `query_document` semantic fingerprints are read-only. `includeFingerprints` and `matchElementFingerprint` may expose type, ancestry, sibling position, attribute/style hashes, geometry/path hashes, text hash, approximate bounding boxes, and ranked match candidates. These helpers must not rewrite ids, mutate SVG, create snapshots, or auto-merge objects.
+- `query_document` supports `responseMode: "compact" | "standard" | "full"`. Compact mode should avoid the full tree payload and return metadata, target summary, and counts. `includeDependencies` is read-only and may expose internal definitions, `url(#id)` / `href="#id"` references, and unresolved internal references. `includeFingerprints` and `matchElementFingerprint` may expose type, ancestry, sibling position, attribute/style hashes, geometry/path hashes, text hash, approximate bounding boxes, and ranked match candidates. These helpers must not rewrite ids, mutate SVG, create snapshots, or auto-merge objects.
+- Workspace write operations should create compact operation-diff artifacts under `operation-diffs/` after successful writes when practical. Diff generation failures must not fail or roll back a valid SVG write; return or record an `OPERATION_DIFF_FAILED` warning.
 - Automatic refresh for existing-object attribute updates should prefer direct active-window attribute sync with Inkscape actions of the form `select-by-id:<id>;object-set-attribute:<name>,<value>`. This applies to `update_element`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, attribute-only `apply_svg_operations`, and direct attribute changes reported by `replace_attribute_values`.
 - Direct active-window attribute sync must only represent attribute setting on existing ids. It must not be used for add/delete/insert operations, text content changes, attribute removal, full-document replacement, or style declaration edits that cannot be mapped back to a single `object-set-attribute` call.
 - Structural automatic GUI refresh should invoke the companion extension after a successful save by default, including on Windows. The extension pulls the workspace SVG into the current window without opening another GUI window. If refresh fails or times out, return a warning and keep `current.svg` authoritative.
@@ -436,11 +438,12 @@ await replaceDocumentSvg({
   - `connect_inkscape_window({ docId, syncMode, connectionId?, documentPath?, inferredDocId?, runtimeDocumentId?, windowId?, timeoutMs? })`
   - `disconnect_inkscape_window({ docId?, connectionId? })`
   - `pull_gui_state({ docId, connectionId?, conflictPolicy?: "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping", timeoutMs? })`
-  - `start_gui_sync_polling({ docId, connectionId?, intervalMs?, timeoutMs? })`
+  - `start_gui_sync_polling({ docId, connectionId?, intervalMs?, timeoutMs?, persist? })`
   - `stop_gui_sync_polling({ docId?, connectionId? })`
-  - `get_gui_sync_status({ docId?, connectionId? })`
+  - `get_gui_sync_status({ docId?, connectionId?, includeHistory? })`
 - Workspace files:
   - `workspace/connections/{connectionId}.json`
+  - `workspace/connections/{connectionId}.polling.json`
   - `workspace/gui-pull/{requestId}.svg`
   - `workspace/gui-pull/{requestId}.json`
 - Metadata fields:
@@ -453,6 +456,7 @@ await replaceDocumentSvg({
 
 - Default behavior remains workspace-only unless a connected document uses `syncMode: "bidirectional"`.
 - `connectionId` must be present in both the workspace connection sidecar and the SVG metadata marker.
+- Connection sidecars should expose `identitySummary` and `capabilitySummary`. Identity strength is `connection_only`, `runtime_document`, `window`, or `full`; `connection_only` is allowed but reported as ambiguous.
 - `windowId` and `runtimeDocumentId` are optional but identity-bearing when present. The connection sidecar, SVG marker, extension config, and GUI pull manifest must preserve and validate them.
 - The SVG metadata marker is workflow metadata: preserve it in `current.svg` and history, strip it from `export_document` by default, and preserve it only with `includeInkMcpMetadata: true`.
 - `pull_gui_state` must trigger the companion extension push action, validate manifest identity, validate the SVG marker identity, parse and safety-filter the pulled SVG, detect revision/hash conflicts, snapshot before write, update metadata, update `lastSeenAt`, and return `idDiff`.
@@ -464,7 +468,7 @@ await replaceDocumentSvg({
 - `render_preview` and `export_document` may use stale workspace output with a warning when pre-pull fails.
 - `rollback_document` must reject when bidirectional sync is active unless `confirmDiscardGuiState: true`.
 - Ambiguous active bidirectional connections for the same `docId` must reject; never guess based on the active window alone.
-- Explicit polling is allowed only through `start_gui_sync_polling`; it is disabled by default, prevents overlapping pulls per connection, and records background errors in `get_gui_sync_status`.
+- Explicit polling is allowed only through `start_gui_sync_polling`; it is disabled by default, prevents overlapping pulls per connection, records skipped pulls/conflicts/errors/backoff in `get_gui_sync_status`, and persists preferences only when `persist: true`.
 
 ### 4. Validation & Error Matrix
 

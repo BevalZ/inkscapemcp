@@ -57,7 +57,7 @@ Bidirectional sync is explicit and off by default. Use it when user edits inside
 
 The pull path is file-based and identity-checked. The extension writes `workspace/gui-pull/{requestId}.svg` plus `workspace/gui-pull/{requestId}.json`; MCP validates the manifest, the SVG metadata marker, the connection id, and revision/hash metadata before replacing `current.svg`.
 
-Use `pull_gui_state` for an explicit manual pull, `start_gui_sync_polling` / `stop_gui_sync_polling` for explicit lightweight background polling, `get_gui_sync_status` to inspect polling errors, and `disconnect_inkscape_window` to end a connection. Polling is disabled by default. If more than one active bidirectional connection targets the same document, current-state tools reject unless the operation provides a specific `connectionId`; MCP never guesses based on the active window alone.
+Use `pull_gui_state` for an explicit manual pull, `start_gui_sync_polling` / `stop_gui_sync_polling` for explicit lightweight background polling, `get_gui_sync_status` to inspect polling errors, and `disconnect_inkscape_window` to end a connection. Polling is disabled by default. `start_gui_sync_polling` can persist a polling preference with `persist: true`; persisted entries are reloaded by later server contexts only when the connection is still active. If more than one active bidirectional connection targets the same document, current-state tools reject unless the operation provides a specific `connectionId`; MCP never guesses based on the active window alone.
 
 For multi-window workflows, pass `windowId` and/or `runtimeDocumentId` to `connect_inkscape_window`. Those values are persisted in the connection sidecar, SVG marker, companion-extension config, and GUI pull manifest when available. If a connection supplied either value, a missing or mismatched value on a later GUI pull rejects with `SYNC_IDENTITY_MISMATCH`.
 
@@ -147,6 +147,7 @@ workspace/
       metadata.json
       operations.log
       history/
+      operation-diffs/
       preview.png
   archive/
   connections/
@@ -209,15 +210,15 @@ External SVG files must be imported before editing. `import_svg_document` accept
 
 For normal edits, prefer in-place tools such as `update_element`, `apply_svg_operations`, `draw_path`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, `insert_svg_fragment`, and `replace_attribute_values`. Use `query_path_nodes` before fine path edits when you need segment indexes and editable points. `replace_document_svg` is a full redraw path and intentionally rejects calls that do not explicitly confirm full document replacement.
 
-`query_document` can include semantic fingerprints with `includeFingerprints: true`, and can rank current-document candidates with `matchElementFingerprint`. The matching uses type, ancestry, sibling position, attribute/style hashes, geometry/path fingerprints, text hash, and approximate bounding boxes. This is a read-only re-identification aid for GUI edits that rename or recreate ids; it does not automatically rewrite ids or merge objects.
+`query_document` supports `responseMode: "compact" | "standard" | "full"`. Compact mode returns document metadata, target summary, and counts instead of the full element tree. `includeDependencies: true` adds read-only summaries for internal `url(#id)` / `href="#id"` references and definitions. `query_document` can also include semantic fingerprints with `includeFingerprints: true`, and can rank current-document candidates with `matchElementFingerprint`. The matching uses type, ancestry, sibling position, attribute/style hashes, geometry/path fingerprints, text hash, and approximate bounding boxes. These helpers do not automatically rewrite ids or merge objects.
 
-Every document write snapshots `current.svg` before replacement. Rollback also snapshots the current state before restoring history. Physical deletion is not supported; use `archive_document`.
+Every document write snapshots `current.svg` before replacement and writes a compact JSON diff artifact under `workspace/drawings/{docId}/operation-diffs/` when possible. Diff artifact failures are warnings and do not roll back a successful SVG write. Rollback also snapshots the current state before restoring history. Physical deletion is not supported; use `archive_document`.
 
 For automatic GUI refresh, `update_element`, `nudge_path_element`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, attribute-only `apply_svg_operations`, and direct attribute changes from `replace_attribute_values` use Inkscape's active-window `object-set-attribute` action against existing element ids. Edits that add, delete, insert, remove attributes, or change text trigger companion-extension refresh after save; failures return warnings and do not roll back the workspace SVG.
 
 `refresh_in_inkscape` uses the companion extension by default and does not open another Inkscape window. It does not run Inkscape's active-window `file-rebase` action unless `allowUnstableRebase: true` is explicitly supplied; keep that path for manual experiments only.
 
-`diagnose_inkscape_gui` inspects the Inkscape binary, user extension directory, and InkSMCP companion extension files without mutating SVG state and without mouse/keyboard automation. GUI automation remains diagnostic fallback only; the primary path is companion extension refresh or allowlisted active-window actions.
+`diagnose_inkscape_gui` inspects the Inkscape binary, user extension directory, and InkSMCP companion extension files without mutating SVG state and without mouse/keyboard automation. It returns capability readiness and remediation hints for same-window refresh and bidirectional GUI pull. GUI automation remains diagnostic fallback only; the primary path is companion extension refresh or allowlisted active-window actions.
 
 ## Phase 2 Notes
 

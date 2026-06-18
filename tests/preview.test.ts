@@ -140,6 +140,12 @@ describe("preview tools", () => {
     expect(result).toMatchObject({
       ok: true,
       docId: "diagnose-doc",
+      capabilityReadiness: {
+        sameWindowRefresh: "ready",
+        bidirectionalGuiPull: "ready",
+        defaultFileRebase: "disabled",
+      },
+      remediation: expect.arrayContaining([expect.objectContaining({ code: "OPEN_WORKSPACE_CURRENT_SVG" })]),
       automationBoundary: {
         mouseKeyboardAutomation: "diagnostic_fallback_only",
         mutatesSvg: false,

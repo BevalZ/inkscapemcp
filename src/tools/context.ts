@@ -3,7 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { DirectAttributeUpdate } from "../adapters/inkscape-cli.js";
 import { InkscapeCli } from "../adapters/inkscape-cli.js";
 import { VectorizerCli } from "../adapters/vectorizer.js";
-import type { DocumentPaths } from "../adapters/workspace.js";
+import type { DocumentPaths, OperationDiffArtifact } from "../adapters/workspace.js";
 import { Workspace } from "../adapters/workspace.js";
 import { InkMcpError, toErrorPayload } from "../core/errors.js";
 import type { AttributeMap, SvgOperation } from "../core/svg-ops.js";
@@ -202,6 +202,19 @@ export function withGuiRefreshResult<T extends Record<string, unknown>>(
   return {
     ...payload,
     ...(refresh.guiRefresh ? { guiRefresh: refresh.guiRefresh } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+}
+
+export function withWriteDiagnostics<T extends Record<string, unknown>>(
+  payload: T,
+  write: { operationDiff?: OperationDiffArtifact; operationDiffWarning?: Record<string, unknown> },
+): T & { operationDiff?: OperationDiffArtifact; warnings?: Record<string, unknown>[] } {
+  const existing = Array.isArray(payload.warnings) ? (payload.warnings as Record<string, unknown>[]) : [];
+  const warnings = write.operationDiffWarning ? [...existing, write.operationDiffWarning] : existing;
+  return {
+    ...payload,
+    ...(write.operationDiff ? { operationDiff: write.operationDiff } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }

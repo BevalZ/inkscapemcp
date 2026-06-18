@@ -70,6 +70,7 @@ export const startGuiSyncPollingSchema = z.object({
   connectionId: connectionIdSchema.optional(),
   intervalMs: z.number().int().min(250).max(60_000).optional(),
   timeoutMs: z.number().int().positive().optional(),
+  persist: z.boolean().default(false),
 });
 
 export const stopGuiSyncPollingSchema = z.object({
@@ -80,6 +81,7 @@ export const stopGuiSyncPollingSchema = z.object({
 export const getGuiSyncStatusSchema = z.object({
   docId: docIdSchema.optional(),
   connectionId: connectionIdSchema.optional(),
+  includeHistory: z.boolean().default(false),
 });
 
 export const addElementSchema = z.object({
@@ -282,6 +284,8 @@ export const queryDocumentSchema = z.object({
   elementId: z.string().optional(),
   skipPrePull: z.boolean().default(false),
   allowStaleRead: z.boolean().default(false),
+  responseMode: z.enum(["compact", "standard", "full"]).default("standard"),
+  includeDependencies: z.boolean().default(false),
   includeFingerprints: z.boolean().default(false),
   matchElementFingerprint: semanticFingerprintSchema.optional(),
   matchLimit: z.number().int().min(1).max(20).default(5),

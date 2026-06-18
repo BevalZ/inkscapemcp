@@ -12,7 +12,9 @@ import {
   serializeSvg,
   summarizeDocument,
   summarizeElement,
+  type ElementSummary,
 } from "../core/svg-document.js";
+import { summarizeSvgDependencies } from "../core/svg-dependencies.js";
 import { findSemanticElementMatches, fingerprintSvgElements } from "../core/semantic-fingerprint.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
@@ -30,6 +32,7 @@ import {
   prePullBeforeCurrentStateWrite,
   tryAutoRefreshInInkscape,
   withGuiRefreshResult,
+  withWriteDiagnostics,
   type ToolContext,
 } from "./context.js";
 import { ensureNoActiveBidirectionalConnectionForRollback } from "./sync.js";
@@ -111,7 +114,7 @@ export async function replaceDocumentSvg(input: z.infer<typeof replaceDocumentSv
     status: "ok",
   });
   const refresh = await tryAutoRefreshInInkscape(ctx, write.paths);
-  return withGuiRefreshResult({
+  return withGuiRefreshResult(withWriteDiagnostics({
     ok: true,
     snapshotPath: write.snapshotPath,
     document: summarizeDocument(parsed, write.paths.currentSvg, input.docId, metadata.title),
@@ -120,10 +123,10 @@ export async function replaceDocumentSvg(input: z.infer<typeof replaceDocumentSv
       {
         code: "FULL_DOCUMENT_REPLACEMENT",
         message:
-          "The entire SVG object tree was replaced. Prefer update_element, apply_svg_operations, insert_svg_fragment, or replace_attribute_values for normal edits.",
+        "The entire SVG object tree was replaced. Prefer update_element, apply_svg_operations, insert_svg_fragment, or replace_attribute_values for normal edits.",
       },
     ],
-  }, refresh);
+  }, write), refresh);
 }
 
 export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, ctx: ToolContext) {
@@ -148,10 +151,38 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
     };
   }
 
+  const documentSummary = summarizeDocument(document, paths.currentSvg, input.docId, metadata.title);
+  const tree = summarizeElement(target);
+  const dependencySummary = input.includeDependencies ? summarizeSvgDependencies(svg) : undefined;
+  const response =
+    input.responseMode === "compact"
+      ? {
+          ok: true,
+          responseMode: input.responseMode,
+          document: documentSummary,
+          target: compactElementSummary(tree),
+          counts: {
+            elementCount: countElements(tree),
+            ...(dependencySummary
+              ? {
+                  definitionCount: dependencySummary.definitionCount,
+                  referenceCount: dependencySummary.referenceCount,
+                  unresolvedReferenceCount: dependencySummary.unresolvedReferenceCount,
+                }
+              : {}),
+          },
+        }
+      : {
+          ok: true,
+          responseMode: input.responseMode,
+          document: documentSummary,
+          tree,
+          ...(dependencySummary ? { dependencies: dependencySummary } : {}),
+        };
+
   return {
+    ...response,
     ok: true,
-    document: summarizeDocument(document, paths.currentSvg, input.docId, metadata.title),
-    tree: summarizeElement(target),
     ...(input.includeFingerprints ? { semanticFingerprints: fingerprintSvgElements(svg) } : {}),
     ...(input.matchElementFingerprint
       ? { semanticMatches: findSemanticElementMatches(svg, input.matchElementFingerprint, input.matchLimit) }
@@ -159,6 +190,20 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
     ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
     ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
+}
+
+function compactElementSummary(element: ElementSummary): Record<string, unknown> {
+  return {
+    id: element.id,
+    type: element.type,
+    attributeCount: Object.keys(element.attributes).length,
+    childCount: element.children.length,
+    ...(element.text ? { text: element.text.length > 80 ? `${element.text.slice(0, 77)}...` : element.text } : {}),
+  };
+}
+
+function countElements(element: ElementSummary): number {
+  return 1 + element.children.reduce((sum, child) => sum + countElements(child), 0);
 }
 
 export async function listHistory(input: z.infer<typeof listHistorySchema>, ctx: ToolContext) {
