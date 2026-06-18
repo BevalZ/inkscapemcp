@@ -111,12 +111,19 @@ export interface TransformPathPointsResult extends PathDataEditResult {
   selectedPointCount: number;
   selectedPoints: PathPointSelection[];
   editedSegments: number[];
-  transform: {
-    type: "translate";
-    dx: number;
-    dy: number;
-  };
+  transform: PathPointTransform;
 }
+
+export type PathPointTransform =
+  | {
+      type: "translate";
+      dx: number;
+      dy: number;
+    }
+  | {
+      type: "set_absolute";
+      points: Array<{ x: number; y: number }>;
+    };
 
 export function addElementToSvg(
   svg: string,
@@ -288,11 +295,7 @@ export function transformPathPointsInSvg(
     pointSelector: {
       points: PathPointSelection[];
     };
-    transform: {
-      type: "translate";
-      dx: number;
-      dy: number;
-    };
+    transform: PathPointTransform;
   },
 ): { svg: string; result: TransformPathPointsResult } {
   validateTransformPathPointsInput(input);
@@ -302,13 +305,7 @@ export function transformPathPointsInSvg(
   if (!previousD) {
     throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
   }
-  const edits: PathNodeEdit[] = input.pointSelector.points.map((point) => ({
-    type: "move_point",
-    segmentIndex: point.segmentIndex,
-    point: point.point,
-    dx: input.transform.dx,
-    dy: input.transform.dy,
-  }));
+  const edits = pathPointTransformEdits(input.pointSelector.points, input.transform);
   const nextD = applyPathNodeEdits(previousD, edits);
   element.setAttribute("d", nextD);
   return {
@@ -575,19 +572,10 @@ function findPathElement(document: XmlDocument, elementId: string): XmlElement {
 
 function validateTransformPathPointsInput(input: {
   pointSelector: { points: PathPointSelection[] };
-  transform: { type: "translate"; dx: number; dy: number };
+  transform: PathPointTransform;
 }): void {
   if (input.pointSelector.points.length === 0) {
     throw new InkMcpError("INVALID_INPUT", "Path point selection must not be empty.");
-  }
-  if (!Number.isFinite(input.transform.dx) || !Number.isFinite(input.transform.dy)) {
-    throw new InkMcpError("INVALID_INPUT", "Translate transform deltas must be finite.", {
-      dx: input.transform.dx,
-      dy: input.transform.dy,
-    });
-  }
-  if (input.transform.dx === 0 && input.transform.dy === 0) {
-    throw new InkMcpError("INVALID_INPUT", "Translate transform must move at least one axis.");
   }
   const selectedPoints = new Set<string>();
   for (const point of input.pointSelector.points) {
@@ -600,6 +588,52 @@ function validateTransformPathPointsInput(input: {
     }
     selectedPoints.add(key);
   }
+  if (input.transform.type === "translate") {
+    if (!Number.isFinite(input.transform.dx) || !Number.isFinite(input.transform.dy)) {
+      throw new InkMcpError("INVALID_INPUT", "Translate transform deltas must be finite.", {
+        dx: input.transform.dx,
+        dy: input.transform.dy,
+      });
+    }
+    if (input.transform.dx === 0 && input.transform.dy === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Translate transform must move at least one axis.");
+    }
+    return;
+  }
+
+  if (input.transform.points.length !== input.pointSelector.points.length) {
+    throw new InkMcpError("INVALID_INPUT", "set_absolute target point count must match selected point count.", {
+      selectedPointCount: input.pointSelector.points.length,
+      targetPointCount: input.transform.points.length,
+    });
+  }
+  for (const point of input.transform.points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      throw new InkMcpError("INVALID_INPUT", "set_absolute target coordinates must be finite.", point);
+    }
+  }
+}
+
+function pathPointTransformEdits(points: PathPointSelection[], transform: PathPointTransform): PathNodeEdit[] {
+  if (transform.type === "translate") {
+    return points.map((point) => ({
+      type: "move_point",
+      segmentIndex: point.segmentIndex,
+      point: point.point,
+      dx: transform.dx,
+      dy: transform.dy,
+    }));
+  }
+
+  return points
+    .map((point, index) => ({
+      type: "set_point_absolute" as const,
+      segmentIndex: point.segmentIndex,
+      point: point.point,
+      x: transform.points[index].x,
+      y: transform.points[index].y,
+    }))
+    .sort((left, right) => left.segmentIndex - right.segmentIndex);
 }
 
 function applyAttributes(element: XmlElement, attributes: AttributeMap, options: { skipId: boolean }): void {

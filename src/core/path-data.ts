@@ -37,6 +37,13 @@ export type PathNodeEdit =
       dy?: number;
     }
   | {
+      type: "set_point_absolute";
+      segmentIndex: number;
+      point: EditablePathPoint;
+      x: number;
+      y: number;
+    }
+  | {
       type: "insert_segment";
       index: number;
       segment: PathSegment;
@@ -206,6 +213,10 @@ export function parseEditablePathData(pathData: string): EditablePathSegment[] {
 
 export function describeEditablePathData(pathData: string): EditablePathSegmentInfo[] {
   const segments = parseEditablePathData(pathData);
+  return describeEditablePathSegments(segments);
+}
+
+function describeEditablePathSegments(segments: EditablePathSegment[]): EditablePathSegmentInfo[] {
   let current = { x: 0, y: 0 };
   let subpathStart = { x: 0, y: 0 };
 
@@ -270,6 +281,9 @@ export function applyPathNodeEdits(pathData: string, edits: PathNodeEdit[]): str
     switch (edit.type) {
       case "move_point":
         movePathPoint(segments, edit);
+        break;
+      case "set_point_absolute":
+        setPathPointAbsolute(segments, edit);
         break;
       case "insert_segment":
         insertPathSegment(segments, edit);
@@ -559,6 +573,98 @@ function movePathPoint(segments: EditablePathSegment[], edit: Extract<PathNodeEd
   }
   segment.x2 += dx;
   segment.y2 += dy;
+}
+
+function setPathPointAbsolute(
+  segments: EditablePathSegment[],
+  edit: Extract<PathNodeEdit, { type: "set_point_absolute" }>,
+) {
+  const segment = segments[edit.segmentIndex];
+  if (!segment) {
+    throw new InkMcpError("INVALID_INPUT", "Path segment index is out of range.", {
+      segmentIndex: edit.segmentIndex,
+      segmentCount: segments.length,
+    });
+  }
+  if (!Number.isFinite(edit.x) || !Number.isFinite(edit.y)) {
+    throw new InkMcpError("INVALID_INPUT", "Absolute path point coordinates must be finite.", {
+      x: edit.x,
+      y: edit.y,
+    });
+  }
+
+  const point = currentEditablePoint(segments, edit);
+  const target = { x: edit.x, y: edit.y };
+  const nextPoint = point.relative
+    ? { x: target.x - point.base.x, y: target.y - point.base.y }
+    : target;
+
+  assignPathPoint(segment, edit.point, nextPoint);
+}
+
+function currentEditablePoint(
+  segments: EditablePathSegment[],
+  edit: { segmentIndex: number; point: EditablePathPoint },
+): { base: { x: number; y: number }; relative: boolean } {
+  const info = describeEditablePathSegments(segments)[edit.segmentIndex];
+  if (!info) {
+    throw new InkMcpError("INVALID_INPUT", "Path segment index is out of range.", {
+      segmentIndex: edit.segmentIndex,
+      segmentCount: segments.length,
+    });
+  }
+  const rawPoint = info.points[edit.point];
+  const absolutePoint = info.absolutePoints[edit.point];
+  if (!rawPoint || !absolutePoint) {
+    throw new InkMcpError("INVALID_INPUT", `Selected path segment has no ${edit.point} point.`, {
+      segmentIndex: edit.segmentIndex,
+      command: info.cmd,
+      point: edit.point,
+    });
+  }
+  return {
+    base: {
+      x: absolutePoint.x - rawPoint.x,
+      y: absolutePoint.y - rawPoint.y,
+    },
+    relative: info.relative,
+  };
+}
+
+function assignPathPoint(
+  segment: EditablePathSegment,
+  point: EditablePathPoint,
+  value: { x: number; y: number },
+): void {
+  if (point === "end") {
+    if (!("x" in segment)) {
+      throw new InkMcpError("INVALID_INPUT", "Selected path segment has no endpoint.", {
+        command: segment.cmd,
+      });
+    }
+    segment.x = value.x;
+    segment.y = value.y;
+    return;
+  }
+
+  if (point === "c1") {
+    if (!("x1" in segment)) {
+      throw new InkMcpError("INVALID_INPUT", "Selected path segment has no c1 control point.", {
+        command: segment.cmd,
+      });
+    }
+    segment.x1 = value.x;
+    segment.y1 = value.y;
+    return;
+  }
+
+  if (!("x2" in segment)) {
+    throw new InkMcpError("INVALID_INPUT", "Selected path segment has no c2 control point.", {
+      command: segment.cmd,
+    });
+  }
+  segment.x2 = value.x;
+  segment.y2 = value.y;
 }
 
 function isRelativeCommand(command: EditablePathSegment["cmd"]): boolean {

@@ -236,8 +236,15 @@ export const transformPathPointsSchema = z.object({
       dx: z.number().finite().default(0),
       dy: z.number().finite().default(0),
     }),
+    z.object({
+      type: z.literal("set_absolute"),
+      points: z.array(z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      })).min(1),
+    }),
   ]).superRefine((transform, ctx) => {
-    if (transform.dx === 0 && transform.dy === 0) {
+    if (transform.type === "translate" && transform.dx === 0 && transform.dy === 0) {
       ctx.addIssue({
         code: "custom",
         message: "Translate transform must move at least one axis.",
@@ -245,6 +252,15 @@ export const transformPathPointsSchema = z.object({
       });
     }
   }),
+}).superRefine((input, ctx) => {
+  if (input.transform.type !== "set_absolute") return;
+  if (input.transform.points.length !== input.pointSelector.points.length) {
+    ctx.addIssue({
+      code: "custom",
+      message: "set_absolute target point count must match selected point count.",
+      path: ["transform", "points"],
+    });
+  }
 });
 
 export const queryPathNodesSchema = z.object({

@@ -102,6 +102,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 16 established `query_document({ includePathNodes: true, pathNodeNormalize: "absolute" })` as the document-wide counterpart to the single-path normalized query. The default remains `pathNodeNormalize: "none"`; absolute mode adds token-conscious compact normalized summaries and full normalized segment point details without mutating SVG or changing unsupported-path warning behavior.
 - Phase 1 loop 17 established `transform_path_points` as the first bounded transform-side path editing primitive. It translates explicit `end`/`c1`/`c2` selections on one existing path, rejects empty, duplicate, non-finite, zero, unavailable, or out-of-range point edits before writing, snapshots only after validation succeeds, logs and writes operation diagnostics, and uses direct active-window `d` attribute sync.
 - Phase 1 loop 18 established `validate_path_data` as a read-only raw path preflight surface. It validates one `d` string without `docId`, returns compact command/segment/editable-point summaries on success, returns typed `ok: false` validation errors on malformed or unsupported path data, supports append-style validation with `requireMoveTo: false`, and must not touch workspace files, snapshots, logs, metadata, GUI sync, or Inkscape.
+- Phase 1 loop 19 extended `transform_path_points` with `set_absolute` for exact endpoint/control-handle placement after normalized path inspection. It keeps the existing explicit point-selection boundary, maps ordered absolute target coordinates back into absolute or relative segment storage as needed, rejects selection/target mismatches before snapshot/write, and preserves the same pre-pull, snapshot, diagnostics, log, and direct `d` sync contract as translate.
 
 ### 4. Validation & Error Matrix
 
@@ -863,6 +864,100 @@ const result = await validatePathDataTool({
 ```
 
 Use the validation tool for preflight so path generation feedback stays cheap, deterministic, and free of workspace or GUI side effects.
+
+## Scenario: Path Point Absolute Set Transform Contract
+
+### 1. Scope / Trigger
+
+- Trigger: setting exact path endpoint/control-handle positions after inspecting normalized path nodes.
+- Scope: `transform_path_points` with transform type `set_absolute` for one existing path element.
+- Out of scope: rotation, scaling, matrix transforms, multi-path transforms, path segment creation/deletion, command normalization, and arc or shorthand command support.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- `pointSelector`: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- `transform`: `{ type: "set_absolute", points: Array<{ x: number, y: number }> }`
+- The `transform.points` array maps to `pointSelector.points` by array order.
+- Existing `transform: { type: "translate", dx?, dy? }` remains supported.
+
+### 3. Contracts
+
+- The tool mutates only the target path element's `d` attribute and preserves the element id and object tree.
+- Callers must select explicit segment indexes and point names; hidden selection state is not used.
+- `set_absolute` target count must match selected point count.
+- Target coordinates are absolute SVG user-unit coordinates.
+- Absolute commands store the target coordinates directly.
+- Relative commands preserve their command case and store `target - current segment base`.
+- Edits are applied in path order so later relative segments use bases derived from earlier edited endpoints.
+- The response preserves caller-selected point order and returns the transform payload.
+- Existing parser support remains `M`, `L`, `C`, `Q`, and `Z`, including relative variants.
+- Active bidirectional GUI state must be pre-pulled before current-state write validation.
+- Successful writes snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+
+### 4. Validation & Error Matrix
+
+- Empty selection -> schema validation failure, no pre-pull or write.
+- Duplicate selected point -> schema validation failure, no pre-pull or write.
+- Target count mismatch -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Non-finite target coordinate -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Segment index out of range -> `INVALID_INPUT`, no snapshot/write.
+- Point unavailable for the selected command -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: query a fish mouth with `query_path_nodes({ normalize: "absolute" })`, then set the endpoint and first control handle to exact absolute coordinates with one `set_absolute` call.
+- Good: set points on a relative curve and keep the path command relative while preserving the intended absolute visual position.
+- Base: caller needs rotation or scale; reject until a later transform PRD defines that contract.
+- Bad: rewriting all path commands to absolute just to set one point.
+- Bad: replacing the whole SVG document to move one handle.
+
+### 6. Tests Required
+
+- Schema tests accept `set_absolute` and reject mismatched target counts.
+- Core tests prove absolute and relative command targets land at the requested absolute coordinates without command-case rewrite.
+- Core tests prove out-of-order selections still produce correct path-order relative-coordinate results.
+- Tool-level tests prove successful calls snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests prove invalid target selections leave `current.svg` and history unchanged and do not call Inkscape refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replacePathData({
+  docId,
+  elementId: "mouth",
+  d: normalizedAbsoluteRewrite,
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: {
+    points: [
+      { segmentIndex: 1, point: "c1" },
+      { segmentIndex: 1, point: "end" },
+    ],
+  },
+  transform: {
+    type: "set_absolute",
+    points: [
+      { x: 116, y: 36 },
+      { x: 138, y: 24 },
+    ],
+  },
+});
+```
+
+Use the point transform boundary for exact coordinate edits so validation, bidirectional pre-pull, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
 ## Phase Summary
 
