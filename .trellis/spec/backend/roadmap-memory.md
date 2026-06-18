@@ -10,6 +10,12 @@ This document is the short, durable memory entry. Detailed phase plans live in:
 - `docs/roadmap/phase-2-advanced-svg-inkscape-workflows.md`
 - `docs/roadmap/phase-3-near-1-1-vectorization.md`
 
+Debug and hardening loop plans live in:
+
+- `docs/roadmap/debug-hardening-phase-1.md`
+- `docs/roadmap/debug-hardening-phase-2.md`
+- `docs/roadmap/debug-hardening-phase-3.md`
+
 Future agents should read this memory before proposing or implementing major InkSMCP roadmap work.
 
 ## Guiding Decision
