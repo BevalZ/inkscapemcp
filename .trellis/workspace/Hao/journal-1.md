@@ -61,7 +61,11 @@ Added advanced path editing and node inspection tools, automatic Inkscape refres
 
 ### Main Changes
 
-(Add details)
+- Added the read-only `diff_document_snapshots` MCP tool.
+- Added history snapshot reading with shared snapshot id validation in the workspace adapter.
+- Reused the existing SVG diff engine for compact and full response modes.
+- Added snapshot diff tests for attributes, text, reparent/order structure, add/remove, id-change behavior, and unsafe/missing snapshot ids.
+- Updated README, backend quality guidelines, and roadmap memory.
 
 ### Git Commits
 
@@ -71,7 +75,11 @@ Added advanced path editing and node inspection tools, automatic Inkscape refres
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `npm run typecheck`
+- [OK] `npm test` - 21 files / 94 tests passed
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -235,6 +243,39 @@ Implemented preview-only GUI pull conflict handling with merge preview artifacts
 | Hash | Message |
 |------|---------|
 | `9d4e4ec` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 8: Phase 1 Operation Diff Loop
+
+**Date**: 2026-06-18
+**Task**: Phase 1 Operation Diff Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented read-only snapshot diff inspection with compact/full responses, history snapshot validation, tests, and documentation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5143445` | (see git log) |
 
 ### Testing
 
