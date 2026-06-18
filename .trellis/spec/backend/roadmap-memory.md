@@ -87,6 +87,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 1 established compact query responses, read-only dependency summaries, operation-diff artifacts after successful writes, persisted explicit polling preferences, identity/capability summaries, and GUI diagnostic readiness/remediation output. Future loops should build on these artifacts instead of inventing parallel status or diff formats.
 - Phase 1 loop 2 established `pull_gui_state` `conflictPolicy: "preview_only"`, workspace-confined `merge-previews/` artifacts, and stable merge conflict classes. Future merge/id-repair work should reuse these preview artifacts and conflict class names instead of replacing `current.svg` for review.
 - Phase 1 loop 3 established read-only `diff_document_snapshots` over history snapshots, using the same structured diff engine as operation-diff artifacts with compact/full response modes. Future replay/recovery work should use this inspection contract before applying any mutation.
+- Phase 1 loop 4 established `query_document({ includePathNodes: true })` as a document-wide, read-only path inspection surface. Compact mode returns counts and per-path command/point summaries; standard/full modes include the same supported segment details as `query_path_nodes`. Unsupported path data is returned as structured per-path warnings, not as whole-query failure. Future normalized path views, broader command support, path editing, and replay/recovery tools should reuse this inspection boundary instead of adding parallel parsers.
 
 ### 4. Validation & Error Matrix
 

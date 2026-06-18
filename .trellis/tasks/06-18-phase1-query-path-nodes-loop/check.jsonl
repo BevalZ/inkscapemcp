@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for final review."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify unsupported path data is reported explicitly."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify tests, type-safety, and read-only query behavior."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify no new persistence or workspace bypasses."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify the read-only query does not append operation logs."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Verify roadmap memory reflects new contracts."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check helper reuse and duplication boundaries."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check schema, response, docs, and tests stay consistent."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Verify implementation stays inside Phase 1."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Verify query reliability contract."}

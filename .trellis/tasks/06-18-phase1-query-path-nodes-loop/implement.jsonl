@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for query tool changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for MCP tool logic and core path helpers."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Structured warning/error semantics for unsupported path data."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Read-only query, tests, and forbidden-pattern requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Operation log boundaries; this read-only query must not log writes."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Workspace confinement and no new persistence."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 query/path contracts."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide routing."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Required because this task reuses/extracts path helpers."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Required because changes span schema, query response, docs, and tests."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 roadmap source for richer query modes."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Debug loop source for query reliability requirements."}

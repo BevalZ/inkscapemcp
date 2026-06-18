@@ -15,6 +15,7 @@ import {
   type ElementSummary,
 } from "../core/svg-document.js";
 import { summarizeSvgDependencies } from "../core/svg-dependencies.js";
+import { summarizePathNodesForQuery } from "../core/path-node-summary.js";
 import { findSemanticElementMatches, fingerprintSvgElements } from "../core/semantic-fingerprint.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
@@ -156,6 +157,7 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
   const documentSummary = summarizeDocument(document, paths.currentSvg, input.docId, metadata.title);
   const tree = summarizeElement(target);
   const dependencySummary = input.includeDependencies ? summarizeSvgDependencies(svg) : undefined;
+  const pathNodes = input.includePathNodes ? summarizePathNodesForQuery(target, input.responseMode) : undefined;
   const response =
     input.responseMode === "compact"
       ? {
@@ -172,7 +174,15 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
                   unresolvedReferenceCount: dependencySummary.unresolvedReferenceCount,
                 }
               : {}),
+            ...(pathNodes
+              ? {
+                  pathCount: pathNodes.totalPathCount,
+                  describedPathCount: pathNodes.describedPathCount,
+                  unsupportedPathCount: pathNodes.unsupportedPathCount,
+                }
+              : {}),
           },
+          ...(pathNodes ? { pathNodes } : {}),
         }
       : {
           ok: true,
@@ -180,6 +190,7 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
           document: documentSummary,
           tree,
           ...(dependencySummary ? { dependencies: dependencySummary } : {}),
+          ...(pathNodes ? { pathNodes } : {}),
         };
 
   return {
