@@ -31,8 +31,8 @@ Make MCP-driven edits preserve the existing SVG object tree by default instead o
 * [x] Default refresh behavior avoids the unstable Inkscape `file-rebase` crash path.
 * [x] A companion Inkscape extension can be installed from this repository and refreshes the current Inkscape window by pulling the workspace SVG.
 * [x] Tests cover companion extension packaging, safe path resolution, and installer output.
-* [ ] Successful MCP writes automatically attempt same-window refresh through the companion extension without using `file-rebase`.
-* [ ] Auto-refresh failures are returned as warnings and never roll back a successful SVG write.
+* [x] Successful MCP writes automatically attempt same-window refresh through the companion extension without using `file-rebase`.
+* [x] Auto-refresh failures are returned as warnings and never roll back a successful SVG write.
 
 ## Definition of Done
 
