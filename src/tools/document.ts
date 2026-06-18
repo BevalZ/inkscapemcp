@@ -21,6 +21,7 @@ import {
   type ElementSummary,
 } from "../core/svg-document.js";
 import { summarizeSvgDependencies } from "../core/svg-dependencies.js";
+import { summarizeResolvedStyles } from "../core/svg-style-summary.js";
 import { summarizePathNodesForQuery } from "../core/path-node-summary.js";
 import { findSemanticElementMatches, fingerprintSvgElements } from "../core/semantic-fingerprint.js";
 import { applyOperationsToSvg, type SvgOperation } from "../core/svg-ops.js";
@@ -202,6 +203,12 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
   const tree = summarizeElement(target);
   const dependencySummary = input.includeDependencies ? summarizeSvgDependencies(svg) : undefined;
   const pathNodes = input.includePathNodes ? summarizePathNodesForQuery(target, input.responseMode) : undefined;
+  const resolvedStyle = input.includeResolvedStyle
+    ? summarizeResolvedStyles(svg, {
+        targetElementId: input.elementId,
+        compact: input.responseMode === "compact",
+      })
+    : undefined;
   const response =
     input.responseMode === "compact"
       ? {
@@ -225,8 +232,17 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
                   unsupportedPathCount: pathNodes.unsupportedPathCount,
                 }
               : {}),
+            ...(resolvedStyle
+              ? {
+                  resolvedStyleElementCount: resolvedStyle.elementCount,
+                  styledElementCount: resolvedStyle.styledElementCount,
+                  resolvedStylePropertyCount: resolvedStyle.propertyCount,
+                  unsupportedStyleFeatureCount: resolvedStyle.unsupportedFeatureCount,
+                }
+              : {}),
           },
           ...(pathNodes ? { pathNodes } : {}),
+          ...(resolvedStyle ? { resolvedStyle } : {}),
         }
       : {
           ok: true,
@@ -235,6 +251,7 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
           tree,
           ...(dependencySummary ? { dependencies: dependencySummary } : {}),
           ...(pathNodes ? { pathNodes } : {}),
+          ...(resolvedStyle ? { resolvedStyle } : {}),
         };
 
   return {

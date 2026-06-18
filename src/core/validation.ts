@@ -348,6 +348,7 @@ export const queryDocumentSchema = z.object({
   responseMode: z.enum(["compact", "standard", "full"]).default("standard"),
   includeDependencies: z.boolean().default(false),
   includePathNodes: z.boolean().default(false),
+  includeResolvedStyle: z.boolean().default(false),
   includeFingerprints: z.boolean().default(false),
   matchElementFingerprint: semanticFingerprintSchema.optional(),
   matchLimit: z.number().int().min(1).max(20).default(5),

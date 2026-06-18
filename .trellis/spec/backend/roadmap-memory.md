@@ -97,6 +97,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 11 established `propose_id_repairs` as a read-only id remapping proposal surface. It compares an explicit history snapshot/checkpoint to the current SVG after current-state read pre-pull, reuses semantic fingerprints and scoring, accepts only unique top candidates at or above `minConfidence`, reports low-confidence/ambiguous/no-candidate rejections when requested, and must not snapshot, update metadata, log operations, write artifacts, or refresh Inkscape.
 - Phase 1 loop 12 established `apply_id_repairs` as the explicit mutation boundary for reviewed id remappings. It requires `confirmApplyRepairs: true`, applies only caller-supplied mappings, validates unsafe ids, duplicates, missing ids, and target conflicts before snapshotting, pre-pulls active bidirectional GUI state before current-state writes, rewrites conservative internal references, snapshots before save, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh.
 - Phase 1 loop 13 established read-only merge preview artifact inspection. `list_merge_previews` and `read_merge_preview` expose saved `pull_gui_state({ conflictPolicy: "preview_only" })` artifacts without GUI pre-pull, snapshots, metadata writes, operation logs, operation-diff artifacts, or Inkscape refresh. SVG content is returned only when `includeSvg: true`.
+- Phase 1 loop 14 established `query_document({ includeResolvedStyle: true })` as a read-only effective SVG style summary. It resolves presentation attributes plus inline `style` declarations with inheritance and local override source tracking, supports compact and standard/full response modes, and reports unsupported stylesheet cascade, CSS variables, and `!important` as limitations instead of pretending to compute renderer CSS.
 
 ### 4. Validation & Error Matrix
 
@@ -476,6 +477,85 @@ const preview = await readMergePreview({
 ```
 
 Use the artifact reader so preview identity, workspace confinement, and SVG validation stay enforced.
+
+## Scenario: Resolved Style Query Summary Contract
+
+### 1. Scope / Trigger
+
+- Trigger: querying effective style context before precise SVG edits.
+- Scope: `query_document({ includeResolvedStyle: true })`.
+- Out of scope: renderer-computed CSS, full selector cascade, external stylesheet resolution, CSS variables, media queries, animations, and mutating or normalizing style declarations.
+
+### 2. Signatures
+
+- Tool option: `query_document({ docId, elementId?, responseMode?, includeResolvedStyle: true, skipPrePull?, allowStaleRead? })`
+- `responseMode`: `"compact" | "standard" | "full"`, default `"standard"`.
+- Returned style sources:
+  - `"inherited_attribute"`
+  - `"inherited_style"`
+  - `"local_attribute"`
+  - `"local_style"`
+
+### 3. Contracts
+
+- The option is read-only: no snapshots, metadata writes, operation logs, operation-diff artifacts, preview artifacts, or Inkscape refresh.
+- Current-state read pre-pull behavior is the same as other `query_document` calls for active bidirectional documents.
+- The summary combines supported presentation attributes and inline style declarations.
+- Local presentation attributes override inherited values; local inline style declarations override local presentation attributes.
+- Each resolved property returns `value`, `source`, and `sourceElementId` when the source element has an id.
+- Supported property set:
+  - `fill`, `stroke`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-opacity`
+  - `fill-opacity`, `opacity`, `display`, `visibility`
+  - `font-family`, `font-size`, `font-weight`, `font-style`, `text-anchor`
+  - `clip-path`, `mask`, `filter`, `marker-start`, `marker-mid`, `marker-end`
+- Compact mode returns counts plus compact style summaries and omits the full tree payload.
+- Standard/full modes include detailed resolved-style summaries alongside the normal tree payload.
+- Unsupported style features are warning/limitation entries, including embedded `<style>` sheets, stylesheet processing instructions or links, CSS variables, and `!important`.
+
+### 4. Validation & Error Matrix
+
+- Missing `docId` or invalid `responseMode` -> schema validation failure.
+- Missing `elementId` target -> `INVALID_INPUT` response from `query_document`, no mutation.
+- Malformed or unsafe stored SVG -> normal SVG validation error, no mutation.
+- Active bidirectional pre-pull failure with stale reads disallowed -> sync/Inkscape error, no style summary.
+- Active bidirectional pre-pull failure with `allowStaleRead: true` -> stale-read warning and workspace-based style summary.
+- Unsupported CSS feature -> `UNSUPPORTED_STYLE_FEATURE` warning entry, not whole-query failure.
+
+### 5. Good/Base/Bad Cases
+
+- Good: query a text element and see `fill` from local inline style, `font-size` from local attribute, and `font-family` from a parent inline style.
+- Good: compact mode reports style counts and per-element summaries without returning the full element tree.
+- Base: a document contains `<style>` selector rules; return a limitation warning and still summarize presentation attributes and inline styles.
+- Bad: silently treating stylesheet selector rules or CSS variables as fully resolved values.
+- Bad: refreshing Inkscape or writing snapshots from a style query.
+
+### 6. Tests Required
+
+- Inheritance and local override behavior for attributes and inline style.
+- Compact mode returns counts and omits the full tree.
+- Standard/full mode includes detailed resolved style beside the tree.
+- Unsupported stylesheet, CSS variable, and `!important` features are reported as warnings.
+- Read-only behavior: no history snapshots and no auto-refresh calls.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not claim full computed CSS from simple XML inspection.
+const computedFill = applyCssSelectorsAndVariables(svg, elementId);
+```
+
+#### Correct
+
+```typescript
+const resolvedStyle = summarizeResolvedStyles(svg, {
+  targetElementId: elementId,
+  compact: responseMode === "compact",
+});
+```
+
+Keep this as an SVG authoring summary with explicit limitations. A future renderer-backed or stylesheet-aware inspection tool must use a separate contract.
 
 ## Phase Summary
 

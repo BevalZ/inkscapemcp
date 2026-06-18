@@ -200,6 +200,92 @@ describe("query_document semantic helpers", () => {
     });
     expect(result).toHaveProperty("tree");
   });
+
+  it("returns compact resolved-style summaries with inheritance and local overrides", async () => {
+    await workspace.createDocument("style-doc", "Style", svgWithStyles());
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryDocument(
+      {
+        docId: "style-doc",
+        elementId: "label",
+        responseMode: "compact",
+        includeResolvedStyle: true,
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "compact",
+      counts: {
+        resolvedStyleElementCount: 1,
+        styledElementCount: 1,
+        unsupportedStyleFeatureCount: 4,
+      },
+      resolvedStyle: {
+        elementCount: 1,
+        styledElementCount: 1,
+        elements: [
+          {
+            elementId: "label",
+            type: "text",
+            properties: {
+              fill: { value: "#22c55e", source: "local_style", sourceElementId: "label" },
+              stroke: { value: "var(--label-stroke)", source: "local_style", sourceElementId: "label" },
+              "font-family": { value: "Inter", source: "inherited_style", sourceElementId: "fish" },
+              "font-size": { value: "14px", source: "local_attribute", sourceElementId: "label" },
+              opacity: { value: "0.8", source: "inherited_style", sourceElementId: "fish" },
+            },
+          },
+        ],
+        warnings: expect.arrayContaining([
+          expect.objectContaining({ feature: "external_stylesheet" }),
+          expect.objectContaining({ feature: "stylesheet" }),
+          expect.objectContaining({ feature: "important", elementId: "label" }),
+          expect.objectContaining({ feature: "css_variable", elementId: "label" }),
+        ]),
+      },
+    });
+    expect(result).not.toHaveProperty("tree");
+    await expect(workspace.listHistory("style-doc")).resolves.toEqual([]);
+  });
+
+  it("returns full resolved-style details for the document", async () => {
+    await workspace.createDocument("style-doc", "Style", svgWithStyles());
+
+    const result = await queryDocument(
+      {
+        docId: "style-doc",
+        responseMode: "full",
+        includeResolvedStyle: true,
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "full",
+      tree: { type: "svg" },
+      resolvedStyle: {
+        elementCount: 5,
+        styledElementCount: 3,
+        elements: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "body",
+            properties: expect.objectContaining({
+              fill: { value: "#facc15", source: "local_attribute", sourceElementId: "body" },
+              stroke: { value: "#0f172a", source: "local_style", sourceElementId: "body" },
+              opacity: { value: "0.8", source: "inherited_style", sourceElementId: "fish" },
+            }),
+          }),
+        ]),
+      },
+    });
+  });
 });
 
 function svgWithElement(elementId: string): string {
@@ -228,6 +314,18 @@ function svgWithMixedPaths(): string {
     <path id="body" d="M10 30 C25 5 70 5 90 30 L10 30 Z" fill="#facc15" stroke="#111827"/>
     <path id="relative-fin" d="M35 32 l12 8 l-18 2" fill="none" stroke="#111827"/>
     <path id="arc" d="M20 20 A5 5 0 0 1 30 30" fill="none" stroke="#111827"/>
+  </g>
+</svg>`;
+}
+
+function svgWithStyles(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="#theme" type="text/css"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="60px" viewBox="0 0 100 60">
+  <style id="theme">#body { fill: #ef4444; }</style>
+  <g id="fish" stroke="#111827" style="font-family: Inter; opacity: 0.8">
+    <path id="body" d="M10 30 C25 5 70 5 90 30 C70 55 25 55 10 30 Z" fill="#facc15" style="stroke: #0f172a"/>
+    <text id="label" x="10" y="55" font-size="14px" style="fill: #22c55e; stroke: var(--label-stroke); font-weight: 700 !important">fish</text>
   </g>
 </svg>`;
 }
