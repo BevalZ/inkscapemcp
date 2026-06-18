@@ -275,6 +275,117 @@ describe("path tool validation", () => {
     ).toThrow("startSegmentIndex");
   });
 
+  it("accepts segment list point selectors and rejects invalid segment lists", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [3, 1],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "segment_list",
+        segmentIndexes: [3, 1],
+        pointTypes: ["end", "c1", "c2"],
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [1, 3],
+          pointTypes: ["end"],
+        },
+        transform: { type: "set_relative", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "segment_list",
+        segmentIndexes: [1, 3],
+        pointTypes: ["end"],
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [1, 1],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow("duplicates");
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [-1],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [1],
+          pointTypes: [],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow();
+  });
+
+  it("defers segment list set-transform count validation until selector resolution", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "segment_list",
+          segmentIndexes: [1, 3],
+          pointTypes: ["end"],
+        },
+        transform: { type: "set_absolute", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "segment_list",
+      },
+      transform: {
+        type: "set_absolute",
+        points: [{ x: 1, y: 2 }],
+      },
+    });
+  });
+
   it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
     expect(
       transformPathPointsSchema.parse({

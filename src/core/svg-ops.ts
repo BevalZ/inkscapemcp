@@ -127,6 +127,11 @@ export type PathPointSelector =
       pointTypes?: EditablePathPoint[];
     }
   | {
+      type: "segment_list";
+      segmentIndexes: number[];
+      pointTypes?: EditablePathPoint[];
+    }
+  | {
       type: "nearest";
       x: number;
       y: number;
@@ -616,6 +621,8 @@ function validateTransformPathPointsInput(input: {
     validatePathPointBboxSelector(input.pointSelector);
   } else if (input.pointSelector.type === "segment_range") {
     validatePathPointSegmentRangeSelector(input.pointSelector);
+  } else if (input.pointSelector.type === "segment_list") {
+    validatePathPointSegmentListSelector(input.pointSelector);
   } else if (input.pointSelector.type === "nearest") {
     validatePathPointNearestSelector(input.pointSelector);
   } else if (input.pointSelector.type === "radius") {
@@ -719,6 +726,28 @@ function validatePathPointSegmentRangeSelector(
   }
 }
 
+function validatePathPointSegmentListSelector(selector: Extract<PathPointSelector, { type: "segment_list" }>): void {
+  if (selector.segmentIndexes.length === 0) {
+    throw new InkMcpError("INVALID_INPUT", "Path point segment list selector must not be empty.");
+  }
+  const segmentIndexes = new Set<number>();
+  for (const segmentIndex of selector.segmentIndexes) {
+    if (!Number.isInteger(segmentIndex) || segmentIndex < 0) {
+      throw new InkMcpError(
+        "INVALID_INPUT",
+        "Path point segment list selector indexes must be non-negative integers.",
+        { segmentIndex },
+      );
+    }
+    if (segmentIndexes.has(segmentIndex)) {
+      throw new InkMcpError("INVALID_INPUT", "Path point segment list selector must not contain duplicates.", {
+        segmentIndex,
+      });
+    }
+    segmentIndexes.add(segmentIndex);
+  }
+}
+
 function validatePathPointNearestSelector(selector: Extract<PathPointSelector, { type: "nearest" }>): void {
   if (!Number.isFinite(selector.x) || !Number.isFinite(selector.y)) {
     throw new InkMcpError("INVALID_INPUT", "Path point nearest selector coordinates must be finite.", {
@@ -800,6 +829,32 @@ function resolvePathPointSelector(pathData: string, selector: PathPointSelector)
       throw new InkMcpError("INVALID_INPUT", "Path point segment range selector matched no editable points.", {
         startSegmentIndex: selector.startSegmentIndex,
         endSegmentIndex: selector.endSegmentIndex,
+        pointTypes: [...allowedPointTypes],
+      });
+    }
+    return selected;
+  }
+
+  if (selector.type === "segment_list") {
+    const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+    const segmentIndexes = new Set(selector.segmentIndexes);
+    const outOfRangeSegmentIndexes = selector.segmentIndexes.filter((segmentIndex) => segmentIndex >= segments.length);
+    if (outOfRangeSegmentIndexes.length > 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point segment list selector is out of range.", {
+        segmentIndexes: selector.segmentIndexes,
+        outOfRangeSegmentIndexes,
+        segmentCount: segments.length,
+      });
+    }
+    for (const segment of segments) {
+      if (!segmentIndexes.has(segment.index)) continue;
+      for (const point of segment.availablePoints) {
+        if (allowedPointTypes.has(point)) selected.push({ segmentIndex: segment.index, point });
+      }
+    }
+    if (selected.length === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point segment list selector matched no editable points.", {
+        segmentIndexes: selector.segmentIndexes,
         pointTypes: [...allowedPointTypes],
       });
     }
