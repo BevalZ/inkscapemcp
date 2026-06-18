@@ -95,6 +95,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 9 established saved operation preview artifacts under `workspace/drawings/{docId}/operation-previews/`. `preview_svg_operations` and dry-run `replay_operations` may save candidate SVG plus JSON metadata/diff when `savePreview: true`, without mutating `current.svg`, document metadata, history, operation logs, operation-diff artifacts, or Inkscape GUI state. `list_operation_previews` returns compact metadata and `read_operation_preview` returns metadata plus full diff, with SVG content included only on request. Future apply-from-preview, operation groups, retention, and resource exposure should build on this artifact identity.
 - Phase 1 loop 10 established `apply_operation_preview` for explicitly applying saved operation preview artifacts. It requires `confirmApplyPreview: true`, accepts an explicit baseline or artifact baseline, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg` with the candidate SVG, writes operation-diff diagnostics, appends a compact operation log, and always uses structural companion-extension refresh instead of active-window attribute sync.
 - Phase 1 loop 11 established `propose_id_repairs` as a read-only id remapping proposal surface. It compares an explicit history snapshot/checkpoint to the current SVG after current-state read pre-pull, reuses semantic fingerprints and scoring, accepts only unique top candidates at or above `minConfidence`, reports low-confidence/ambiguous/no-candidate rejections when requested, and must not snapshot, update metadata, log operations, write artifacts, or refresh Inkscape.
+- Phase 1 loop 12 established `apply_id_repairs` as the explicit mutation boundary for reviewed id remappings. It requires `confirmApplyRepairs: true`, applies only caller-supplied mappings, validates unsafe ids, duplicates, missing ids, and target conflicts before snapshotting, pre-pulls active bidirectional GUI state before current-state writes, rewrites conservative internal references, snapshots before save, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh.
 
 ### 4. Validation & Error Matrix
 
@@ -127,7 +128,7 @@ Phase 3 candidate tool families:
 
 - Identity handshake and extension capability tests.
 - Polling lifecycle, persistence, backoff, and no-overlap tests.
-- Id repair proposal and ambiguity rejection tests.
+- Id repair proposal, ambiguity rejection, and explicit apply tests.
 - Merge preview and conflict class tests.
 - Query compact/full response tests.
 - Path round-trip and unsupported-command tests.
@@ -330,6 +331,85 @@ const proposals = await proposeIdRepairs({
 ```
 
 Use proposal output for review and planning only. A future `apply_id_repairs` tool must own snapshot-first mutation, id conflict policy, and dependency/reference rewrites.
+
+## Scenario: Id Repair Apply Contract
+
+### 1. Scope / Trigger
+
+- Trigger: applying reviewed element id remappings to the current workspace SVG after proposal, human, or agent review.
+- Scope: `apply_id_repairs` and conservative internal reference rewrite for repaired ids.
+- Out of scope: automatic proposal selection, proposal artifact persistence, cross-document repair, broad dependency graph normalization, visual scoring, and non-reject conflict policies.
+
+### 2. Signatures
+
+- Tool: `apply_id_repairs({ docId, repairs, confirmApplyRepairs, responseMode? })`
+- Repair: `{ fromElementId, toElementId, confidence?, reasons? }`
+- `fromElementId` is the desired repaired id.
+- `toElementId` is the current element id to rename.
+- `responseMode`: `"compact" | "full"`, default `"compact"`.
+
+### 3. Contracts
+
+- `confirmApplyRepairs` must be `true` before any GUI pre-pull or write work begins.
+- The tool applies only caller-supplied repairs. It must not select proposals automatically.
+- Active bidirectional GUI state must be pre-pulled through current-state write semantics before validating the current SVG for mutation.
+- Validation must happen before snapshot creation and reject unsafe ids, the reserved InkSMCP metadata id, duplicate `fromElementId`, duplicate `toElementId`, self-repairs, missing current ids, duplicate current ids, and target id conflicts.
+- Successful apply renames each current `toElementId` element to `fromElementId`.
+- Successful apply rewrites conservative internal references from old ids to new ids, including `url(#id)`, `href="#id"`, `xlink:href="#id"`, `aria-labelledby`, and `aria-describedby`.
+- Successful apply snapshots current SVG first, writes the repaired SVG, updates metadata, writes an operation-diff artifact when possible, appends a compact operation log entry, and triggers structural companion-extension refresh.
+- Compact mode returns summary counts, applied repair summaries, repaired ids, rewritten reference count, and changed ids.
+- Full mode also returns the structured diff from the shared diff engine.
+
+### 4. Validation & Error Matrix
+
+- Missing `confirmApplyRepairs: true` -> `INVALID_INPUT`, no pre-pull and no write.
+- Unsafe id or reserved InkSMCP metadata id -> `INVALID_INPUT`, no snapshot/write.
+- Duplicate `fromElementId` or `toElementId` -> `INVALID_INPUT`, no snapshot/write.
+- `fromElementId === toElementId` -> `INVALID_INPUT`, no snapshot/write.
+- Missing or duplicate current `toElementId` -> `INVALID_INPUT`, no snapshot/write.
+- Existing unrelated `fromElementId` -> `ID_CONFLICT`, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+- Companion extension refresh failure after successful write -> warning only; keep `current.svg` authoritative.
+
+### 5. Good/Base/Bad Cases
+
+- Good: current has `renamed-body`, caller confirms `{ fromElementId: "body", toElementId: "renamed-body" }`; the tool restores `id="body"`, rewrites internal references, snapshots, logs, writes diagnostics, and refreshes structurally.
+- Base: caller supplies a mapping whose target id already exists; reject with `ID_CONFLICT` and leave workspace state unchanged.
+- Bad: calling `apply_id_repairs` directly with unreviewed proposal output in a loop that auto-applies every candidate.
+- Bad: changing ids through generic attribute replacement, which would skip pre-pull, conflict policy, reference rewrite, and id-repair-specific diagnostics.
+
+### 6. Tests Required
+
+- Missing confirmation rejects before GUI pre-pull and leaves workspace state unchanged.
+- Invalid, duplicate, self, missing, and conflicting repairs reject without creating snapshots or writing logs.
+- Core apply test proves id rename and internal reference rewrites.
+- Successful tool apply snapshots, writes `current.svg`, updates metadata, writes operation-diff diagnostics, logs `apply_id_repairs`, and triggers structural companion refresh.
+- Compact mode omits full diff arrays.
+- Full mode includes structured diff arrays.
+- Active bidirectional GUI state is pre-pulled before current ids are validated for mutation.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replaceAttributeValues({
+  docId,
+  replacements: [{ attributeNames: ["id"], from: "renamed-body", to: "body" }],
+});
+```
+
+#### Correct
+
+```typescript
+await applyIdRepairs({
+  docId,
+  repairs: [{ fromElementId: "body", toElementId: "renamed-body" }],
+  confirmApplyRepairs: true,
+});
+```
+
+Use the apply tool so confirmation, bidirectional pre-pull, conflict validation, reference rewrite, snapshot-first write, operation diagnostics, and structural refresh stay coupled.
 
 ## Phase Summary
 

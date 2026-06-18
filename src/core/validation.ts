@@ -411,6 +411,20 @@ export const proposeIdRepairsSchema = z.object({
   allowStaleRead: z.boolean().default(false),
 });
 
+export const applyIdRepairsSchema = z.object({
+  docId: docIdSchema,
+  repairs: z.array(
+    z.object({
+      fromElementId: elementIdSchema,
+      toElementId: elementIdSchema,
+      confidence: z.number().int().nonnegative().optional(),
+      reasons: z.array(z.string().min(1)).optional(),
+    }),
+  ).min(1),
+  confirmApplyRepairs: z.boolean().default(false),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
+});
+
 export const rollbackDocumentSchema = z.object({
   docId: docIdSchema,
   snapshotId: z.string().min(1),

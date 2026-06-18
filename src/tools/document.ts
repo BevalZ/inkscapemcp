@@ -5,7 +5,12 @@ import * as z from "zod/v4";
 import { timestampId } from "../adapters/workspace.js";
 import { InkMcpError } from "../core/errors.js";
 import { createDocId } from "../core/ids.js";
-import { proposeIdRepairsFromSvg, type IdRepairProposalResult } from "../core/id-repair.js";
+import {
+  applyIdRepairsToSvg,
+  proposeIdRepairsFromSvg,
+  type IdRepairApplyResult,
+  type IdRepairProposalResult,
+} from "../core/id-repair.js";
 import {
   createSvgDocument,
   getSvgRoot,
@@ -22,6 +27,7 @@ import { applyOperationsToSvg, type SvgOperation } from "../core/svg-ops.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
+  applyIdRepairsSchema,
   applyOperationPreviewSchema,
   createCheckpointSchema,
   createDocumentSchema,
@@ -728,6 +734,81 @@ export async function proposeIdRepairs(input: z.infer<typeof proposeIdRepairsSch
     ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
     ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
+}
+
+export async function applyIdRepairs(input: z.infer<typeof applyIdRepairsSchema>, ctx: ToolContext) {
+  if (!input.confirmApplyRepairs) {
+    throw new InkMcpError("INVALID_INPUT", "apply_id_repairs requires confirmApplyRepairs: true.", {
+      requiredFlag: "confirmApplyRepairs",
+    });
+  }
+
+  await prePullBeforeCurrentStateWrite(ctx, input.docId, "apply_id_repairs");
+  let prepared: IdRepairApplyResult | undefined;
+  const write = await ctx.workspace.writeSvgWithSnapshot(
+    input.docId,
+    "apply_id_repairs",
+    (currentSvg) => {
+      const applied = prepared ?? applyIdRepairsToSvg({
+        currentSvg,
+        repairs: input.repairs,
+      });
+      const diff = diffSvgDocuments(currentSvg, applied.svg);
+      return {
+        svg: applied.svg,
+        result: {
+          ...applied,
+          diff,
+        },
+      };
+    },
+    {
+      beforeSnapshot: (currentSvg) => {
+        prepared = applyIdRepairsToSvg({
+          currentSvg,
+          repairs: input.repairs,
+        });
+      },
+    },
+  );
+  await appendOperationLog(write.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "apply_id_repairs",
+    inputSummary: {
+      repairCount: input.repairs.length,
+      repairedElementIds: write.result.repairedElementIds,
+      rewrittenReferenceCount: write.result.rewrittenReferenceCount,
+    },
+    snapshotPath: write.snapshotPath,
+    status: "ok",
+  });
+  const refresh = await tryAutoRefreshInInkscape(ctx, write.paths);
+  const compact = {
+    ok: true,
+    docId: input.docId,
+    responseMode: "compact" as const,
+    applied: true,
+    repairCount: write.result.appliedRepairs.length,
+    appliedRepairs: write.result.appliedRepairs,
+    repairedElementIds: write.result.repairedElementIds,
+    rewrittenReferenceCount: write.result.rewrittenReferenceCount,
+    summary: write.result.diff.summary,
+    addedElementIds: write.result.diff.addedElementIds,
+    removedElementIds: write.result.diff.removedElementIds,
+    changedElementIds: write.result.diff.changedElementIds,
+    snapshotPath: write.snapshotPath,
+    currentSvgPath: write.paths.currentSvg,
+  };
+  const payload =
+    input.responseMode === "full"
+      ? {
+          ...compact,
+          responseMode: "full" as const,
+          diff: write.result.diff,
+        }
+      : compact;
+  return withGuiRefreshResult(withWriteDiagnostics(payload, write), refresh);
 }
 
 function compactIdRepairProposal(

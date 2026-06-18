@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   addElementSchema,
+  applyIdRepairsSchema,
   appendPathSegmentSchema,
   applyOperationPreviewSchema,
   applySvgOperationsSchema,
@@ -56,6 +57,7 @@ import { toErrorPayload } from "./core/errors.js";
 import { createToolContext, jsonResult, runTool } from "./tools/context.js";
 import {
   archiveDocument,
+  applyIdRepairs,
   applyOperationPreview,
   createCheckpoint,
   createDocument,
@@ -506,6 +508,17 @@ export function createServer() {
       inputSchema: proposeIdRepairsSchema,
     },
     (input) => runTool("propose_id_repairs", () => proposeIdRepairs(input, ctx)),
+  );
+
+  server.registerTool(
+    "apply_id_repairs",
+    {
+      title: "Apply id repairs",
+      description:
+        "Apply explicit confirmed element id repairs, rewrite internal references, snapshot first, and refresh structurally.",
+      inputSchema: applyIdRepairsSchema,
+    },
+    (input) => runTool("apply_id_repairs", () => applyIdRepairs(input, ctx)),
   );
 
   server.registerTool(
