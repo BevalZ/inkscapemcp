@@ -229,6 +229,14 @@ export const applySvgOperationsSchema = z.object({
   operations: z.array(operationSchema).min(1),
 });
 
+export const previewSvgOperationsSchema = z.object({
+  docId: docIdSchema,
+  operations: z.array(operationSchema).min(1),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
+  skipPrePull: z.boolean().default(false),
+  allowStaleRead: z.boolean().default(false),
+});
+
 export const insertSvgFragmentSchema = z.object({
   docId: docIdSchema,
   parentId: z.string().optional(),

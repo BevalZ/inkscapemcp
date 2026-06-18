@@ -17,6 +17,7 @@ import {
 import { summarizeSvgDependencies } from "../core/svg-dependencies.js";
 import { summarizePathNodesForQuery } from "../core/path-node-summary.js";
 import { findSemanticElementMatches, fingerprintSvgElements } from "../core/semantic-fingerprint.js";
+import { applyOperationsToSvg } from "../core/svg-ops.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
@@ -25,6 +26,7 @@ import {
   diffDocumentSnapshotsSchema,
   importSvgDocumentSchema,
   listHistorySchema,
+  previewSvgOperationsSchema,
   queryDocumentSchema,
   recoverDocumentSchema,
   replaceDocumentSvgSchema,
@@ -273,11 +275,56 @@ function compactSnapshotDiff(
   };
 }
 
+function compactOperationPreview(
+  input: z.infer<typeof previewSvgOperationsSchema>,
+  diff: SvgOperationDiff,
+  previewResult: { changedElementIds: string[] },
+) {
+  return {
+    ok: true,
+    docId: input.docId,
+    responseMode: "compact" as const,
+    operationCount: input.operations.length,
+    generatedAt: diff.generatedAt,
+    summary: diff.summary,
+    addedElementIds: diff.addedElementIds,
+    removedElementIds: diff.removedElementIds,
+    changedElementIds: diff.changedElementIds,
+    previewChangedElementIds: previewResult.changedElementIds,
+  };
+}
+
 export async function listHistory(input: z.infer<typeof listHistorySchema>, ctx: ToolContext) {
   return {
     ok: true,
     docId: input.docId,
     snapshots: await ctx.workspace.listHistory(input.docId),
+  };
+}
+
+export async function previewSvgOperations(input: z.infer<typeof previewSvgOperationsSchema>, ctx: ToolContext) {
+  const prePull = await prePullBeforeCurrentStateRead(ctx, input.docId, {
+    toolName: "preview_svg_operations",
+    skipPrePull: input.skipPrePull,
+    allowStaleRead: input.allowStaleRead,
+  });
+  const svg = await ctx.workspace.readSvg(input.docId);
+  const preview = applyOperationsToSvg(svg, input.operations);
+  const diff = diffSvgDocuments(svg, preview.svg);
+  const compact = compactOperationPreview(input, diff, preview.result);
+  const response =
+    input.responseMode === "full"
+      ? {
+          ...compact,
+          responseMode: "full" as const,
+          diff,
+        }
+      : compact;
+
+  return {
+    ...response,
+    ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
+    ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
 }
 

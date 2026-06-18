@@ -30,6 +30,7 @@ import {
   pathDifferenceSchema,
   pathGeometryBaseSchema,
   pathGeometryMultiSchema,
+  previewSvgOperationsSchema,
   pullGuiStateSchema,
   queryPathNodesSchema,
   recoverDocumentSchema,
@@ -55,6 +56,7 @@ import {
   diffDocumentSnapshots,
   importSvgDocument,
   listHistory,
+  previewSvgOperations,
   queryDocument,
   recoverDocument,
   replaceDocumentSvg,
@@ -339,6 +341,17 @@ export function createServer() {
       inputSchema: queryDocumentSchema,
     },
     (input) => runTool("query_document", () => queryDocument(input, ctx)),
+  );
+
+  server.registerTool(
+    "preview_svg_operations",
+    {
+      title: "Preview SVG operations",
+      description:
+        "Apply a controlled SVG operation batch in memory and return a structured diff without writing current.svg or refreshing Inkscape.",
+      inputSchema: previewSvgOperationsSchema,
+    },
+    (input) => runTool("preview_svg_operations", () => previewSvgOperations(input, ctx)),
   );
 
   server.registerTool(
