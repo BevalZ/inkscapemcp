@@ -484,3 +484,36 @@ Implemented replay_operations for deterministic controlled operation replay. Wri
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Phase 1 Saved Operation Preview Artifact Loop
+
+**Date**: 2026-06-19
+**Task**: Phase 1 Saved Operation Preview Artifact Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented saved operation preview artifacts. preview_svg_operations and dry-run replay_operations can now save candidate SVG plus JSON metadata/full diff under operation-previews without changing current.svg, document metadata, history, operation logs, operation-diff artifacts, or GUI state. Added list_operation_previews and read_operation_preview, with SVG content included only on request. Verified npm run typecheck, npm test, npm run build, python inkscape-extension/inksmcp_pull.py --self-test, and git diff --check. Remaining Phase 1 follow-ups include apply-from-preview, operation groups/checkpoint association, preview retention/resource exposure, id repair proposal/apply, and stronger merge/path-edit reliability.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f708d51` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
