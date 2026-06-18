@@ -550,3 +550,36 @@ Implemented apply_operation_preview for saved operation preview artifacts with c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Phase 1 Id Repair Proposal Loop
+
+**Date**: 2026-06-19
+**Task**: Phase 1 Id Repair Proposal Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented read-only propose_id_repairs for baseline snapshot to current SVG semantic id remapping proposals, including threshold and ambiguity handling, bidirectional pre-pull, compact/full responses, documentation, roadmap memory, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3d763b9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
