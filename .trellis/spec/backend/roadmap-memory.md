@@ -96,6 +96,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 10 established `apply_operation_preview` for explicitly applying saved operation preview artifacts. It requires `confirmApplyPreview: true`, accepts an explicit baseline or artifact baseline, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg` with the candidate SVG, writes operation-diff diagnostics, appends a compact operation log, and always uses structural companion-extension refresh instead of active-window attribute sync.
 - Phase 1 loop 11 established `propose_id_repairs` as a read-only id remapping proposal surface. It compares an explicit history snapshot/checkpoint to the current SVG after current-state read pre-pull, reuses semantic fingerprints and scoring, accepts only unique top candidates at or above `minConfidence`, reports low-confidence/ambiguous/no-candidate rejections when requested, and must not snapshot, update metadata, log operations, write artifacts, or refresh Inkscape.
 - Phase 1 loop 12 established `apply_id_repairs` as the explicit mutation boundary for reviewed id remappings. It requires `confirmApplyRepairs: true`, applies only caller-supplied mappings, validates unsafe ids, duplicates, missing ids, and target conflicts before snapshotting, pre-pulls active bidirectional GUI state before current-state writes, rewrites conservative internal references, snapshots before save, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh.
+- Phase 1 loop 13 established read-only merge preview artifact inspection. `list_merge_previews` and `read_merge_preview` expose saved `pull_gui_state({ conflictPolicy: "preview_only" })` artifacts without GUI pre-pull, snapshots, metadata writes, operation logs, operation-diff artifacts, or Inkscape refresh. SVG content is returned only when `includeSvg: true`.
 
 ### 4. Validation & Error Matrix
 
@@ -410,6 +411,71 @@ await applyIdRepairs({
 ```
 
 Use the apply tool so confirmation, bidirectional pre-pull, conflict validation, reference rewrite, snapshot-first write, operation diagnostics, and structural refresh stay coupled.
+
+## Scenario: Merge Preview Artifact Inspection Contract
+
+### 1. Scope / Trigger
+
+- Trigger: inspecting saved GUI merge preview artifacts after `pull_gui_state({ conflictPolicy: "preview_only" })`.
+- Scope: `list_merge_previews`, `read_merge_preview`, and `workspace/drawings/{docId}/merge-previews/` artifacts.
+- Out of scope: applying merge previews, deleting/pruning artifacts, saving merge previews outside GUI pull preview mode, cross-document reads, and changing merge conflict classes.
+
+### 2. Signatures
+
+- Tool: `list_merge_previews({ docId })`
+- Tool: `read_merge_preview({ docId, previewId, includeSvg? })`
+- `includeSvg`: boolean, default `false`.
+
+### 3. Contracts
+
+- Both tools are read-only: no GUI pre-pull, snapshots, metadata updates, operation logs, operation-diff artifacts, connection baseline updates, or Inkscape refresh.
+- `list_merge_previews` returns compact artifact metadata and never includes SVG content.
+- `read_merge_preview` returns compact metadata and includes SVG content only with `includeSvg: true`.
+- `previewId` must resolve only under `workspace/drawings/{docId}/merge-previews/`.
+- Artifact metadata paths must match the requested document and preview id.
+- SVG content must parse and pass the normal full-SVG safety validation before being returned.
+- The artifact identity must remain compatible with future apply-from-merge-preview tools.
+
+### 4. Validation & Error Matrix
+
+- Unsafe `previewId` -> `INVALID_INPUT`, no read outside workspace.
+- Missing metadata or SVG artifact -> `DOC_NOT_FOUND`, no mutation.
+- Metadata preview id/path mismatch -> `INVALID_INPUT`.
+- Malformed or unsafe stored SVG -> normal SVG validation error.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `pull_gui_state` preview mode writes a `previewable` artifact; a later agent calls `list_merge_previews`, then `read_merge_preview({ includeSvg: true })` to inspect the candidate.
+- Base: no merge preview directory exists; `list_merge_previews` returns an empty list.
+- Bad: reading a merge preview triggers GUI pre-pull or refresh.
+- Bad: applying a merge preview by feeding its SVG into `replace_document_svg`.
+
+### 6. Tests Required
+
+- List saved merge preview artifacts without SVG payloads.
+- Read metadata-only and with-SVG variants.
+- Unsafe or missing preview ids reject without workspace mutation.
+- Read/list do not call GUI pre-pull or refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const svg = await readFile(userSuppliedPath, "utf8");
+```
+
+#### Correct
+
+```typescript
+const preview = await readMergePreview({
+  docId,
+  previewId,
+  includeSvg: true,
+});
+```
+
+Use the artifact reader so preview identity, workspace confinement, and SVG validation stay enforced.
 
 ## Phase Summary
 

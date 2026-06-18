@@ -63,7 +63,7 @@ For multi-window workflows, pass `windowId` and/or `runtimeDocumentId` to `conne
 
 When a GUI pull detects that the workspace changed since the connection baseline, `SYNC_CONFLICT` includes a `conflictReport` with baseline metadata, current workspace metadata, GUI candidate hash, id diff, and policy suggestions. Use `conflictPolicy: "prefer_gui"` only when GUI state should replace newer workspace edits. Use `conflictPolicy: "merge_non_overlapping"` to attempt a conservative three-way merge for element ids changed on only one side; overlapping element changes, text conflicts, deletes, reparenting, sibling-order changes, dependency-sensitive changes, and concurrent adds with the same id still reject with structured merge conflict classes.
 
-Use `conflictPolicy: "preview_only"` to validate and inspect a GUI pull without replacing `current.svg`. When the pull is clean, or a conservative non-overlapping merge candidate can be computed, MCP writes a review artifact under `workspace/drawings/{docId}/merge-previews/` and returns `pullStatus: "clean"` or `"previewable"`. If no safe candidate exists, it returns `pullStatus: "conflict_only"` with structured conflict classes and no preview SVG.
+Use `conflictPolicy: "preview_only"` to validate and inspect a GUI pull without replacing `current.svg`. When the pull is clean, or a conservative non-overlapping merge candidate can be computed, MCP writes a review artifact under `workspace/drawings/{docId}/merge-previews/` and returns `pullStatus: "clean"` or `"previewable"`. If no safe candidate exists, it returns `pullStatus: "conflict_only"` with structured conflict classes and no preview SVG. Use `list_merge_previews` and `read_merge_preview` to rediscover and inspect saved merge preview artifacts later; both tools are read-only and include SVG content only when `includeSvg: true`.
 
 ## Build And Test
 
@@ -169,6 +169,8 @@ Phase 1 document and preview tools:
 - `start_gui_sync_polling`
 - `stop_gui_sync_polling`
 - `get_gui_sync_status`
+- `list_merge_previews`
+- `read_merge_preview`
 - `create_document`
 - `import_svg_document`
 - `create_checkpoint`

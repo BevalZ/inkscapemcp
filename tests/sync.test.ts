@@ -13,7 +13,9 @@ import {
   connectInkscapeWindow,
   createGuiSyncPollRegistry,
   getGuiSyncStatus,
+  listMergePreviews,
   pullGuiState,
+  readMergePreview,
   startGuiSyncPolling,
   stopGuiSyncPolling,
 } from "../src/tools/sync.js";
@@ -415,6 +417,106 @@ describe("bidirectional GUI sync", () => {
     await expect(workspace.readSvg("fish")).resolves.toBe(beforePreview);
     await expect(readFile(result.mergePreview?.svgPath as string, "utf8")).resolves.toContain("workspace-change");
     await expect(readFile(result.mergePreview?.svgPath as string, "utf8")).resolves.toContain("#a7f3d0");
+  });
+
+  it("lists and reads saved merge preview artifacts without mutating state", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_non_overlap", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<circle id="workspace-change" cx="5" cy="5" r="2" fill="#0f172a"/></svg>'),
+      result: {},
+    }));
+    mockGuiPull(inkscape, workspace, baseSvg("#a7f3d0"));
+    const preview = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    const previewId = path.basename(preview.mergePreview?.metadataPath as string, ".json");
+    const beforeSvg = await workspace.readSvg("fish");
+    const beforeMetadata = await workspace.readMetadata("fish");
+    const refresh = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+    const push = vi.spyOn(inkscape, "pushGuiStateWithCompanionExtension");
+
+    const listed = await listMergePreviews({ docId: "fish" }, { workspace, inkscape, autoRefresh: { enabled: true } });
+    expect(listed).toMatchObject({
+      ok: true,
+      docId: "fish",
+      previews: [
+        {
+          previewId,
+          docId: "fish",
+          status: "previewable",
+          candidateKind: "merge_non_overlapping",
+          svgPath: expect.stringContaining("merge-previews"),
+          metadataPath: expect.stringContaining("merge-previews"),
+        },
+      ],
+    });
+    expect(listed.previews[0]).not.toHaveProperty("svg");
+
+    const withoutSvg = await readMergePreview(
+      { docId: "fish", previewId, includeSvg: false },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+    expect(withoutSvg).toMatchObject({
+      ok: true,
+      docId: "fish",
+      previewId,
+      metadata: {
+        previewId,
+        docId: "fish",
+        status: "previewable",
+        candidateKind: "merge_non_overlapping",
+      },
+    });
+    expect(withoutSvg).not.toHaveProperty("svg");
+
+    const withSvg = await readMergePreview(
+      { docId: "fish", previewId, includeSvg: true },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+    expect(withSvg.svg).toContain("workspace-change");
+    expect(withSvg.svg).toContain("#a7f3d0");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(push).toHaveBeenCalledTimes(1);
+    await expect(workspace.readSvg("fish")).resolves.toBe(beforeSvg);
+    await expect(workspace.readMetadata("fish")).resolves.toMatchObject({
+      revision: beforeMetadata.revision,
+      contentHash: beforeMetadata.contentHash,
+      lastWriter: beforeMetadata.lastWriter,
+    });
+  });
+
+  it("rejects unsafe or missing merge preview ids without mutating state", async () => {
+    const beforeSvg = await workspace.readSvg("fish");
+    const beforeMetadata = await workspace.readMetadata("fish");
+
+    await expect(
+      readMergePreview(
+        { docId: "fish", previewId: "../escape", includeSvg: false },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+
+    await expect(
+      readMergePreview(
+        { docId: "fish", previewId: "missing-preview", includeSvg: false },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toMatchObject({ code: "DOC_NOT_FOUND" });
+
+    await expect(workspace.readSvg("fish")).resolves.toBe(beforeSvg);
+    await expect(workspace.readMetadata("fish")).resolves.toMatchObject({
+      revision: beforeMetadata.revision,
+      contentHash: beforeMetadata.contentHash,
+      lastWriter: beforeMetadata.lastWriter,
+    });
   });
 
   it("previews a clean GUI pull without replacing current.svg or advancing connection baseline", async () => {

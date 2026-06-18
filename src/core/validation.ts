@@ -90,6 +90,16 @@ export const getGuiSyncStatusSchema = z.object({
   includeHistory: z.boolean().default(false),
 });
 
+export const listMergePreviewsSchema = z.object({
+  docId: docIdSchema,
+});
+
+export const readMergePreviewSchema = z.object({
+  docId: docIdSchema,
+  previewId: z.string().min(1),
+  includeSvg: z.boolean().default(false),
+});
+
 export const addElementSchema = z.object({
   docId: docIdSchema,
   type: z.enum(supportedElementTypes),

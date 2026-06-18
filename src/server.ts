@@ -27,6 +27,7 @@ import {
   importSvgDocumentSchema,
   insertSvgFragmentSchema,
   listHistorySchema,
+  listMergePreviewsSchema,
   listOperationPreviewsSchema,
   nudgePathElementSchema,
   openInInkscapeSchema,
@@ -40,6 +41,7 @@ import {
   recoverDocumentSchema,
   queryDocumentSchema,
   readOperationPreviewSchema,
+  readMergePreviewSchema,
   refreshInInkscapeSchema,
   renderPreviewSchema,
   replayOperationsSchema,
@@ -104,7 +106,9 @@ import {
   connectInkscapeWindow,
   disconnectInkscapeWindow,
   getGuiSyncStatus,
+  listMergePreviews,
   pullGuiState,
+  readMergePreview,
   startGuiSyncPolling,
   stopGuiSyncPolling,
 } from "./tools/sync.js";
@@ -175,6 +179,26 @@ export function createServer() {
       inputSchema: getGuiSyncStatusSchema,
     },
     (input) => runTool("get_gui_sync_status", () => getGuiSyncStatus(input, ctx)),
+  );
+
+  server.registerTool(
+    "list_merge_previews",
+    {
+      title: "List merge previews",
+      description: "List saved read-only GUI merge preview artifacts for a document.",
+      inputSchema: listMergePreviewsSchema,
+    },
+    (input) => runTool("list_merge_previews", () => listMergePreviews(input, ctx)),
+  );
+
+  server.registerTool(
+    "read_merge_preview",
+    {
+      title: "Read merge preview",
+      description: "Read a saved GUI merge preview artifact. SVG content is included only when requested.",
+      inputSchema: readMergePreviewSchema,
+    },
+    (input) => runTool("read_merge_preview", () => readMergePreview(input, ctx)),
   );
 
   server.registerTool(

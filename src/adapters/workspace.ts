@@ -136,11 +136,23 @@ export interface OperationPreviewArtifactSummary {
 }
 
 export interface GuiMergePreviewArtifact {
+  previewId?: string;
   svgPath: string;
   metadataPath: string;
   generatedAt: string;
   status: "clean" | "previewable";
   candidateKind: "pulled_gui" | "merge_non_overlapping";
+  summary: Record<string, unknown>;
+}
+
+export interface GuiMergePreviewArtifactSummary {
+  previewId: string;
+  docId: string;
+  svgPath: string;
+  metadataPath: string;
+  generatedAt: string;
+  status: GuiMergePreviewArtifact["status"];
+  candidateKind: GuiMergePreviewArtifact["candidateKind"];
   summary: Record<string, unknown>;
 }
 
@@ -454,6 +466,7 @@ export class Workspace {
     const svgPath = this.resolveWithinWorkspace("drawings", input.docId, "merge-previews", `${artifactId}.svg`);
     const metadataPath = this.resolveWithinWorkspace("drawings", input.docId, "merge-previews", `${artifactId}.json`);
     const artifact: GuiMergePreviewArtifact = {
+      previewId: artifactId,
       svgPath,
       metadataPath,
       generatedAt,
@@ -464,6 +477,65 @@ export class Workspace {
     await this.atomicWrite(svgPath, input.svg);
     await this.atomicWrite(metadataPath, `${JSON.stringify(artifact, null, 2)}\n`);
     return artifact;
+  }
+
+  async listGuiMergePreviews(docId: string): Promise<GuiMergePreviewArtifactSummary[]> {
+    const paths = this.documentPaths(docId);
+    await this.assertDocumentExists(paths);
+    const entries = await readdir(paths.mergePreviewsDir, { withFileTypes: true }).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    });
+    const previews = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map(async (entry) => {
+          const previewId = path.basename(entry.name, ".json");
+          const expectedSvgPath = this.resolveWithinWorkspace("drawings", docId, "merge-previews", `${previewId}.svg`);
+          const expectedMetadataPath = this.resolveWithinWorkspace("drawings", docId, "merge-previews", `${previewId}.json`);
+          const raw = await readFile(path.join(paths.mergePreviewsDir, entry.name), "utf8");
+          return compactGuiMergePreviewArtifact(
+            docId,
+            previewId,
+            JSON.parse(raw) as GuiMergePreviewArtifact,
+            expectedSvgPath,
+            expectedMetadataPath,
+          );
+        }),
+    );
+    return previews.sort((a, b) => a.previewId.localeCompare(b.previewId));
+  }
+
+  async readGuiMergePreview(
+    docId: string,
+    previewId: string,
+  ): Promise<{ metadata: GuiMergePreviewArtifactSummary; svg: string }> {
+    const paths = this.documentPaths(docId);
+    await this.assertDocumentExists(paths);
+    const safePreviewId = assertSafeMergePreviewId(previewId);
+    const metadataPath = this.resolveWithinWorkspace("drawings", docId, "merge-previews", `${safePreviewId}.json`);
+    const svgPath = this.resolveWithinWorkspace("drawings", docId, "merge-previews", `${safePreviewId}.svg`);
+    const raw = await readFile(metadataPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new InkMcpError("DOC_NOT_FOUND", "Merge preview artifact was not found.", { previewId });
+      }
+      throw error;
+    });
+    const metadata = compactGuiMergePreviewArtifact(
+      docId,
+      safePreviewId,
+      JSON.parse(raw) as GuiMergePreviewArtifact,
+      svgPath,
+      metadataPath,
+    );
+    const svg = await readFile(svgPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new InkMcpError("DOC_NOT_FOUND", "Merge preview SVG artifact was not found.", { previewId });
+      }
+      throw error;
+    });
+    parseFullSvg(svg);
+    return { metadata, svg };
   }
 
   async writeOperationPreviewArtifact(input: {
@@ -956,6 +1028,45 @@ function compactOperationPreviewArtifact(
   };
 }
 
+function compactGuiMergePreviewArtifact(
+  docId: string,
+  previewId: string,
+  artifact: GuiMergePreviewArtifact,
+  expectedSvgPath: string,
+  expectedMetadataPath: string,
+): GuiMergePreviewArtifactSummary {
+  if (artifact.previewId && artifact.previewId !== previewId) {
+    throw new InkMcpError("INVALID_INPUT", "Merge preview metadata does not match the requested preview id.", {
+      previewId,
+      artifactPreviewId: artifact.previewId,
+    });
+  }
+  if (path.resolve(artifact.svgPath) !== path.resolve(expectedSvgPath)) {
+    throw new InkMcpError("INVALID_INPUT", "Merge preview metadata does not match the requested document.", {
+      docId,
+      previewId,
+      svgPath: artifact.svgPath,
+    });
+  }
+  if (path.resolve(artifact.metadataPath) !== path.resolve(expectedMetadataPath)) {
+    throw new InkMcpError("INVALID_INPUT", "Merge preview metadata path does not match the requested document.", {
+      docId,
+      previewId,
+      metadataPath: artifact.metadataPath,
+    });
+  }
+  return {
+    previewId,
+    docId,
+    svgPath: artifact.svgPath,
+    metadataPath: artifact.metadataPath,
+    generatedAt: artifact.generatedAt,
+    status: artifact.status,
+    candidateKind: artifact.candidateKind,
+    summary: artifact.summary,
+  };
+}
+
 function assertSafeConnectionId(connectionId: string): string {
   if (!/^conn-[A-Za-z0-9_-]{8,80}$/.test(connectionId)) {
     throw new InkMcpError("INVALID_INPUT", "Invalid connection id.", { connectionId });
@@ -973,6 +1084,13 @@ function assertSafeRequestId(requestId: string): string {
 function assertSafeOperationPreviewId(previewId: string): string {
   if (!/^[A-Za-z0-9_.-]+$/.test(previewId)) {
     throw new InkMcpError("INVALID_INPUT", "Invalid operation preview id.", { previewId });
+  }
+  return previewId;
+}
+
+function assertSafeMergePreviewId(previewId: string): string {
+  if (!/^[A-Za-z0-9_.-]+$/.test(previewId)) {
+    throw new InkMcpError("INVALID_INPUT", "Invalid merge preview id.", { previewId });
   }
   return previewId;
 }

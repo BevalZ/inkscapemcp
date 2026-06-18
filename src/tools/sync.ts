@@ -14,7 +14,9 @@ import {
   connectInkscapeWindowSchema,
   disconnectInkscapeWindowSchema,
   getGuiSyncStatusSchema,
+  listMergePreviewsSchema,
   pullGuiStateSchema,
+  readMergePreviewSchema,
   startGuiSyncPollingSchema,
   stopGuiSyncPollingSchema,
 } from "../core/validation.js";
@@ -430,6 +432,25 @@ export async function getGuiSyncStatus(input: z.infer<typeof getGuiSyncStatusSch
     ok: true,
     polling: statuses,
     ...(persistedPolling ? { persistedPolling } : {}),
+  };
+}
+
+export async function listMergePreviews(input: z.infer<typeof listMergePreviewsSchema>, ctx: ToolContext) {
+  return {
+    ok: true,
+    docId: input.docId,
+    previews: await ctx.workspace.listGuiMergePreviews(input.docId),
+  };
+}
+
+export async function readMergePreview(input: z.infer<typeof readMergePreviewSchema>, ctx: ToolContext) {
+  const artifact = await ctx.workspace.readGuiMergePreview(input.docId, input.previewId);
+  return {
+    ok: true,
+    docId: input.docId,
+    previewId: input.previewId,
+    metadata: artifact.metadata,
+    ...(input.includeSvg ? { svg: artifact.svg } : {}),
   };
 }
 
