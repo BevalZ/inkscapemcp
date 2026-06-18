@@ -120,6 +120,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 34 extended `recover_document` with `strategy: "last_snapshot"` as the first bounded strategy-based recovery helper. It remains mutually exclusive with explicit `snapshotId`, resolves the newest history snapshot by `createdAt` with a stable id tie-break, rejects empty history before snapshot/write, preserves the active bidirectional GUI discard guard, reuses snapshot-first rollback mechanics, logs the resolved strategy and snapshot id, and uses the existing structural refresh path after successful recovery.
 - Phase 1 loop 35 extended `recover_document` with `strategy: "last_successful_write"` as an undo-last-write recovery helper. It scans the document operation log from newest to oldest, selects the first successful entry with a snapshot path under the document history directory, skips malformed/error/no-snapshot/out-of-document entries, resolves the snapshot id from that pre-write snapshot, rejects missing recoverable logs before snapshot/write, preserves the active bidirectional GUI discard guard, reuses snapshot-first rollback mechanics, logs the resolved strategy and snapshot id, and uses the existing structural refresh path after successful recovery.
 - Phase 1 loop 36 extended the raw editable path parser/query/edit boundary with `H/h` and `V/v` command support. `query_path_nodes`, `query_document({ includePathNodes: true })`, `edit_path_nodes`, and `transform_path_points` now expose H/V endpoints while preserving command storage form. H/h endpoints may change only when the resulting y remains representable by the horizontal command, and V/v endpoints may change only when the resulting x remains representable by the vertical command; non-representable edits reject before snapshot/write, operation logs, operation-diff artifacts, or GUI refresh.
+- Phase 1 loop 37 added exact failure diagnostics to `validate_path_data`. Malformed or unsupported raw path data now reports actionable details when available, including command, command index, command token index, segment index, expected/actual/missing parameter counts, token index, source offset, and invalid text snippets. The tool remains read-only, no-`docId`, no-workspace, no-log, no-refresh, and append-style diagnostics use segment indexes local to the supplied fragment.
 
 ### 4. Validation & Error Matrix
 
@@ -820,14 +821,14 @@ Use the transform tool for explicit point movement so bidirectional pre-pull, va
 - `d`: raw SVG path data string.
 - `requireMoveTo`: boolean, default `true`.
 - Success response: `ok: true`, `d`, `requireMoveTo`, `segmentCount`, `commandCounts`, `unsupportedCommandCount`, `relativeCommandCount`, `absoluteCommandCount`, `availablePointCount`, and `editablePointSummary`.
-- Failure response: `ok: false`, `d`, `requireMoveTo`, and typed `error` payload.
+- Failure response: `ok: false`, `d`, `requireMoveTo`, and typed `error` payload. When practical, `error.details` includes `command`, `commandIndex`, `commandTokenIndex`, `segmentIndex`, `expectedParamCount`, `actualParamCount`, `missingParamCount`, `tokenIndex`, `offset`, and `invalidText`.
 
 ### 3. Contracts
 
 - The tool is read-only and does not require `docId`.
 - The tool must not read workspace files, write workspace files, snapshot, update metadata, append operation logs, pre-pull GUI state, update connection baselines, or refresh Inkscape.
 - Validation reuses the existing path parser and editable path boundary.
-- Successful summaries support only editable `M`, `L`, `C`, `Q`, and `Z` path commands, including relative variants.
+- Successful summaries support only editable `M`, `L`, `H`, `V`, `C`, `Q`, and `Z` path commands, including relative variants.
 - `requireMoveTo: true` validates complete path data and requires the first command to be `M` or `m`.
 - `requireMoveTo: false` validates append-style fragments by allowing non-move first commands while keeping the same editable-command boundary for summaries.
 - Expected validation failures return normal structured `ok: false` payloads from the tool handler, not thrown MCP-level errors.
@@ -837,9 +838,9 @@ Use the transform tool for explicit point movement so bidirectional pre-pull, va
 
 - Empty `d` -> `ok: false`, `INVALID_INPUT`, no side effects.
 - Invalid characters or trailing garbage -> `ok: false`, `INVALID_INPUT`, no side effects.
-- Incomplete parameter set -> `ok: false`, `INVALID_INPUT` with command detail when available.
+- Incomplete parameter set -> `ok: false`, `INVALID_INPUT` with command, segment, token, expected/actual/missing parameter count, and source offset details when available.
 - `requireMoveTo: true` and first command is not `M` or `m` -> `ok: false`, `INVALID_INPUT`.
-- Unsupported editable command such as `A`, `S`, `T`, `H`, or `V` -> `ok: false`, `INVALID_INPUT` with `details.command`.
+- Unsupported editable command such as `A`, `S`, or `T` -> `ok: false`, `INVALID_INPUT` with command, segment, token, and source offset details when available.
 - Invalid `requireMoveTo` type -> schema validation failure before handler execution.
 
 ### 5. Good/Base/Bad Cases
@@ -854,7 +855,7 @@ Use the transform tool for explicit point movement so bidirectional pre-pull, va
 
 - Schema tests prove `d` is accepted without `docId`, `requireMoveTo` defaults to `true`, and empty strings reach the handler.
 - Core tests prove complete and append-style path summaries include segment counts, command counts, relative/absolute counts, and editable point summaries.
-- Core tests prove malformed and unsupported path data return typed `ok: false` results.
+- Core tests prove malformed and unsupported path data return typed `ok: false` results with segment/command/token diagnostics.
 - Tool-level tests prove validation does not read/write workspace state, create history snapshots, call active-window attribute sync, or call companion refresh.
 - Existing path write/edit/query tests remain green.
 

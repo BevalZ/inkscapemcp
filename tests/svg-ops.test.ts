@@ -160,12 +160,55 @@ describe("SVG operations", () => {
   });
 
   it("returns typed validation failures for malformed or unsupported path data", () => {
+    expect(summarizePathDataValidation("M10 10 C20 20 30")).toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path command has an incomplete parameter set.",
+        details: {
+          command: "C",
+          segmentIndex: 1,
+          commandIndex: 1,
+          expectedParamCount: 6,
+          actualParamCount: 3,
+          missingParamCount: 3,
+          tokenIndex: 7,
+          offset: 16,
+        },
+      },
+    });
+
     expect(summarizePathDataValidation("M10 10 A5 5 0 0 1 20 20")).toMatchObject({
       ok: false,
       error: {
         code: "INVALID_INPUT",
         message: "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.",
-        details: { command: "A" },
+        details: {
+          command: "A",
+          segmentIndex: 1,
+          commandIndex: 1,
+          commandTokenIndex: 3,
+          offset: 7,
+          expectedParamCount: 7,
+        },
+      },
+    });
+
+    expect(summarizePathDataValidation("M10 10 # L20 20")).toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path data contains invalid characters.",
+        details: { offset: 7, invalidText: "#" },
+      },
+    });
+
+    expect(summarizePathDataValidation("M10 10 L20 20 @")).toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path data contains invalid trailing characters.",
+        details: { offset: 14, invalidText: "@" },
       },
     });
 
@@ -175,6 +218,26 @@ describe("SVG operations", () => {
       error: {
         code: "INVALID_INPUT",
         message: "Path data must not be empty.",
+        details: { offset: 0, tokenIndex: 0 },
+      },
+    });
+  });
+
+  it("reports append-style path validation diagnostics with local segment indexes", () => {
+    expect(summarizePathDataValidation("L10 10 C12 10", { requireMoveTo: false })).toMatchObject({
+      ok: false,
+      requireMoveTo: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path command has an incomplete parameter set.",
+        details: {
+          command: "C",
+          segmentIndex: 1,
+          commandIndex: 1,
+          expectedParamCount: 6,
+          actualParamCount: 2,
+          missingParamCount: 4,
+        },
       },
     });
   });

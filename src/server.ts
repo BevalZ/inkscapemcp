@@ -314,7 +314,7 @@ export function createServer() {
     {
       title: "Validate path data",
       description:
-        "Validate raw SVG path data and return a compact read-only segment and editable-point summary.",
+        "Validate raw SVG path data and return a compact read-only segment/editable-point summary or exact failure diagnostics.",
       inputSchema: validatePathDataSchema,
     },
     (input) => runTool("validate_path_data", () => validatePathDataTool(input)),

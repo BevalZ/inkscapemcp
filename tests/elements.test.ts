@@ -1781,7 +1781,29 @@ describe("element tools", () => {
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        details: { command: "A" },
+        details: {
+          command: "A",
+          segmentIndex: 1,
+          commandIndex: 1,
+          commandTokenIndex: 3,
+          offset: 5,
+          expectedParamCount: 7,
+        },
+      },
+    });
+
+    await expect(validatePathDataTool({ d: "M1 1 C2 2 3", requireMoveTo: true })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        details: {
+          command: "C",
+          segmentIndex: 1,
+          commandIndex: 1,
+          expectedParamCount: 6,
+          actualParamCount: 3,
+          missingParamCount: 3,
+        },
       },
     });
 

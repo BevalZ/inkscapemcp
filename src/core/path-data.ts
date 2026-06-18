@@ -79,9 +79,18 @@ export interface PathDataInput {
 
 interface PathDataValidationOptions {
   requireMoveTo?: boolean;
+  requireEditableCommands?: boolean;
 }
 
-type PathToken = { type: "command" | "number"; value: string };
+type PathToken = { type: "command" | "number"; value: string; offset: number; endOffset: number };
+
+interface PathCommandContext {
+  command: string;
+  commandIndex: number;
+  tokenIndex: number;
+  offset: number;
+  endOffset: number;
+}
 
 export interface PathDataValidationSummary {
   ok: true;
@@ -189,7 +198,7 @@ export function editablePathSegmentsToD(segments: EditablePathSegment[]): string
 }
 
 export function parseEditablePathData(pathData: string): EditablePathSegment[] {
-  validatePathData(pathData, { requireMoveTo: true });
+  validatePathData(pathData, { requireMoveTo: true, requireEditableCommands: true });
   const tokens = tokenizePathData(pathData.trim());
   const segments: EditablePathSegment[] = [];
   let index = 0;
@@ -380,56 +389,139 @@ export function applyPathNodeEdits(pathData: string, edits: PathNodeEdit[]): str
 export function validatePathData(pathData: string, options: PathDataValidationOptions = {}): void {
   const trimmed = pathData.trim();
   if (!trimmed) {
-    throw new InkMcpError("INVALID_INPUT", "Path data must not be empty.");
+    throw new InkMcpError("INVALID_INPUT", "Path data must not be empty.", {
+      offset: 0,
+      tokenIndex: 0,
+    });
   }
 
   const tokens = tokenizePathData(trimmed);
   if (tokens[0]?.type !== "command") {
-    throw new InkMcpError("INVALID_INPUT", "Path data must start with an SVG path command.");
+    throw new InkMcpError("INVALID_INPUT", "Path data must start with an SVG path command.", {
+      tokenIndex: 0,
+      offset: tokens[0]?.offset ?? 0,
+      token: tokens[0]?.value,
+    });
   }
   if (options.requireMoveTo !== false && !["M", "m"].includes(tokens[0].value)) {
-    throw new InkMcpError("INVALID_INPUT", "Complete path data must start with M or m.");
+    throw new InkMcpError("INVALID_INPUT", "Complete path data must start with M or m.", {
+      command: tokens[0].value,
+      commandIndex: 0,
+      tokenIndex: 0,
+      offset: tokens[0].offset,
+    });
   }
 
   let index = 0;
   let currentCommand: string | undefined;
+  let currentCommandContext: PathCommandContext | undefined;
+  let commandIndex = -1;
+  let segmentIndex = 0;
+  let zeroParamSegmentIndex: number | undefined;
 
   while (index < tokens.length) {
     const token = tokens[index];
     if (token.type === "command") {
+      commandIndex += 1;
       currentCommand = token.value;
+      currentCommandContext = {
+        command: token.value,
+        commandIndex,
+        tokenIndex: index,
+        offset: token.offset,
+        endOffset: token.endOffset,
+      };
+      zeroParamSegmentIndex = undefined;
+      if (options.requireEditableCommands === true) {
+        assertEditablePathCommand(currentCommand, {
+          ...commandDiagnosticDetails(currentCommand, currentCommandContext, segmentIndex),
+          expectedParamCount: commandParamCounts[currentCommand],
+        });
+      }
       index += 1;
-      if (commandParamCounts[currentCommand] === 0) continue;
+      if (commandParamCounts[currentCommand] === 0) {
+        zeroParamSegmentIndex = segmentIndex;
+        segmentIndex += 1;
+        continue;
+      }
     } else if (!currentCommand) {
-      throw new InkMcpError("INVALID_INPUT", "Path number appeared before any command.");
+      throw new InkMcpError("INVALID_INPUT", "Path number appeared before any command.", {
+        tokenIndex: index,
+        offset: token.offset,
+        token: token.value,
+      });
     }
 
     const paramCount = currentCommand ? commandParamCounts[currentCommand] : undefined;
     if (paramCount === undefined) {
-      throw new InkMcpError("INVALID_INPUT", "Unsupported SVG path command.", { command: currentCommand });
+      throw new InkMcpError("INVALID_INPUT", "Unsupported SVG path command.", {
+        ...(currentCommandContext
+          ? commandDiagnosticDetails(currentCommand, currentCommandContext, segmentIndex)
+          : { command: currentCommand }),
+      });
     }
     if (paramCount === 0) {
-      throw new InkMcpError("INVALID_INPUT", "Close-path command cannot be followed by implicit numbers.");
+      throw new InkMcpError("INVALID_INPUT", "Close-path command cannot be followed by implicit numbers.", {
+        ...commandDiagnosticDetails(currentCommand, currentCommandContext, zeroParamSegmentIndex ?? segmentIndex),
+        tokenIndex: index,
+        offset: token.offset,
+        token: token.value,
+      });
     }
 
     let consumed = 0;
     while (index < tokens.length && tokens[index].type !== "command") {
+      const availableParamCount = countConsecutiveNumberTokens(tokens, index);
+      if (availableParamCount < paramCount) {
+        throw new InkMcpError("INVALID_INPUT", "Path command has an incomplete parameter set.", {
+          ...incompleteParameterDetails(
+            trimmed,
+            tokens,
+            currentCommand,
+            currentCommandContext,
+            index,
+            availableParamCount,
+            paramCount,
+            segmentIndex,
+          ),
+        });
+      }
       for (let paramIndex = 0; paramIndex < paramCount; paramIndex += 1) {
         const value = tokens[index];
         if (!value || value.type !== "number") {
           throw new InkMcpError("INVALID_INPUT", "Path command has an incomplete parameter set.", {
-            command: currentCommand,
+            ...incompleteParameterDetails(
+              trimmed,
+              tokens,
+              currentCommand,
+              currentCommandContext,
+              index,
+              paramIndex,
+              paramCount,
+              segmentIndex,
+            ),
           });
         }
         index += 1;
       }
       consumed += paramCount;
+      segmentIndex += 1;
       if (currentCommand === "M") currentCommand = "L";
       if (currentCommand === "m") currentCommand = "l";
     }
 
     if (consumed === 0) {
-      throw new InkMcpError("INVALID_INPUT", "Path command has no parameters.", { command: currentCommand });
+      throw new InkMcpError("INVALID_INPUT", "Path command has no parameters.", {
+        ...missingParameterDetails(
+          trimmed,
+          tokens,
+          currentCommand,
+          currentCommandContext,
+          index,
+          paramCount,
+          segmentIndex,
+        ),
+      });
     }
   }
 }
@@ -450,7 +542,7 @@ export function summarizePathDataValidation(
   const d = pathData.trim();
   const requireMoveTo = options.requireMoveTo !== false;
   try {
-    validatePathData(d, { requireMoveTo });
+    validatePathData(d, { requireMoveTo, requireEditableCommands: true });
     const segments = describeEditablePathDataWithOptions(d, { requireMoveTo });
     const commandCounts: Record<string, number> = {};
     let relativeCommandCount = 0;
@@ -502,25 +594,36 @@ function tokenizePathData(pathData: string): PathToken[] {
   while ((match = pathTokenPattern.exec(pathData)) !== null) {
     const gap = pathData.slice(cursor, match.index);
     if (!/^[\s,]*$/.test(gap)) {
-      throw new InkMcpError("INVALID_INPUT", "Path data contains invalid characters.");
+      throw new InkMcpError("INVALID_INPUT", "Path data contains invalid characters.", {
+        ...invalidTextDetails(pathData, cursor, match.index),
+      });
     }
 
     const value = match[0];
     if (commandTokenPattern.test(value)) {
-      tokens.push({ type: "command", value });
+      tokens.push({ type: "command", value, offset: match.index, endOffset: match.index + value.length });
     } else if (numberTokenPattern.test(value)) {
-      tokens.push({ type: "number", value });
+      tokens.push({ type: "number", value, offset: match.index, endOffset: match.index + value.length });
     } else {
-      throw new InkMcpError("INVALID_INPUT", "Path data contains an invalid token.", { token: value });
+      throw new InkMcpError("INVALID_INPUT", "Path data contains an invalid token.", {
+        token: value,
+        offset: match.index,
+        endOffset: match.index + value.length,
+      });
     }
     cursor = match.index + value.length;
   }
 
   if (!/^[\s,]*$/.test(pathData.slice(cursor))) {
-    throw new InkMcpError("INVALID_INPUT", "Path data contains invalid trailing characters.");
+    throw new InkMcpError("INVALID_INPUT", "Path data contains invalid trailing characters.", {
+      ...invalidTextDetails(pathData, cursor, pathData.length),
+    });
   }
   if (tokens.length === 0) {
-    throw new InkMcpError("INVALID_INPUT", "Path data must contain at least one command.");
+    throw new InkMcpError("INVALID_INPUT", "Path data must contain at least one command.", {
+      offset: 0,
+      tokenIndex: 0,
+    });
   }
 
   return tokens;
@@ -533,12 +636,100 @@ function formatPathNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function assertEditablePathCommand(command: string): asserts command is EditablePathSegment["cmd"] {
+function assertEditablePathCommand(
+  command: string,
+  details: Record<string, unknown> = {},
+): asserts command is EditablePathSegment["cmd"] {
   if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "Z", "z"].includes(command)) {
     throw new InkMcpError("INVALID_INPUT", "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.", {
       command,
+      ...details,
     });
   }
+}
+
+function commandDiagnosticDetails(
+  command: string | undefined,
+  context: PathCommandContext | undefined,
+  segmentIndex: number,
+): Record<string, unknown> {
+  if (!context) return { command, segmentIndex };
+
+  return {
+    command,
+    segmentIndex,
+    commandIndex: context.commandIndex,
+    commandTokenIndex: context.tokenIndex,
+    commandOffset: context.offset,
+    tokenIndex: context.tokenIndex,
+    offset: context.offset,
+    ...(command && command !== context.command
+      ? { sourceCommand: context.command, implicitCommand: true }
+      : {}),
+  };
+}
+
+function incompleteParameterDetails(
+  pathData: string,
+  tokens: PathToken[],
+  command: string | undefined,
+  context: PathCommandContext | undefined,
+  parameterStartIndex: number,
+  actualParamCount: number,
+  expectedParamCount: number,
+  segmentIndex: number,
+): Record<string, unknown> {
+  const failureToken = tokens[parameterStartIndex + actualParamCount];
+  return {
+    ...commandDiagnosticDetails(command, context, segmentIndex),
+    expectedParamCount,
+    actualParamCount,
+    missingParamCount: expectedParamCount - actualParamCount,
+    tokenIndex: failureToken ? parameterStartIndex + actualParamCount : tokens.length,
+    offset: failureToken?.offset ?? pathData.length,
+    ...(failureToken ? { token: failureToken.value } : {}),
+  };
+}
+
+function missingParameterDetails(
+  pathData: string,
+  tokens: PathToken[],
+  command: string | undefined,
+  context: PathCommandContext | undefined,
+  index: number,
+  expectedParamCount: number,
+  segmentIndex: number,
+): Record<string, unknown> {
+  const failureToken = tokens[index];
+  return {
+    ...commandDiagnosticDetails(command, context, segmentIndex),
+    expectedParamCount,
+    actualParamCount: 0,
+    missingParamCount: expectedParamCount,
+    tokenIndex: failureToken ? index : tokens.length,
+    offset: failureToken?.offset ?? pathData.length,
+    ...(failureToken ? { token: failureToken.value } : {}),
+  };
+}
+
+function countConsecutiveNumberTokens(tokens: PathToken[], startIndex: number): number {
+  let count = 0;
+  for (let index = startIndex; index < tokens.length && tokens[index].type === "number"; index += 1) {
+    count += 1;
+  }
+  return count;
+}
+
+function invalidTextDetails(pathData: string, startOffset: number, endOffset: number) {
+  const text = pathData.slice(startOffset, endOffset);
+  const invalidOffsetInText = text.search(/[^\s,]/);
+  const offset = invalidOffsetInText >= 0 ? startOffset + invalidOffsetInText : startOffset;
+  const invalidText = pathData.slice(offset, endOffset).trim();
+  return {
+    offset,
+    endOffset,
+    invalidText: invalidText.slice(0, 40),
+  };
 }
 
 function describeEditablePathDataWithOptions(
