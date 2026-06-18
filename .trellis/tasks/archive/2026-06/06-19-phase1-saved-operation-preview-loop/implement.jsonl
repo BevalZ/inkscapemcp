@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for saved preview artifact changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for workspace artifact storage, validation, tools, and server registration."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error semantics for invalid preview ids and failed preview generation."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Schema, read-only boundary, workspace confinement, and forbidden-pattern requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Confirm saved dry-run previews do not append operation logs."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Filesystem artifact persistence and metadata boundary."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 dry-run/replay/preview contracts."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide routing."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Saved preview should reuse existing diff and operation preview flow."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Changes span workspace, schemas, tools, docs, and tests."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 source for operation diff, dry-run, replay, and recovery workstream."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Debug hardening source for dry-run and replay foundations."}

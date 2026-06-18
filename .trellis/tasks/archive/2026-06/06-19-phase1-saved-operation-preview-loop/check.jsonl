@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for saved preview quality checks."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify invalid preview ids and operation failures leave state unchanged."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify schemas, workspace confinement, tests, and forbidden patterns."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify saved previews do not append operation logs."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify artifact persistence and no metadata/history writes."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Verify durable saved preview contract is documented consistently."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify existing preview/diff helpers were reused."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify schema/tool/docs/tests stay consistent."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Verify saved preview scope matches Phase 1 roadmap."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Verify hardening loop evidence and boundaries."}
