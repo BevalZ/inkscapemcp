@@ -49,6 +49,46 @@ Implemented Phase 2 tools for font import, Inkscape-backed path geometry, allowl
 - None - task complete
 
 
+## Session 17: Phase 1 Id Repair Apply Loop
+
+**Date**: 2026-06-19
+**Task**: Phase 1 Id Repair Apply Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented `apply_id_repairs` as the explicit write boundary for reviewed id remappings, including confirmation-first validation, bidirectional GUI pre-pull, conservative internal reference rewrites, snapshot-first writes, operation diagnostics, structural refresh, documentation, roadmap memory, and tests.
+
+### Main Changes
+
+- Added core id repair apply logic beside the existing proposal logic.
+- Registered the MCP tool and schema.
+- Added unit/tool tests for validation, reference rewrites, write diagnostics, refresh behavior, and bidirectional pre-pull ordering.
+- Updated README and roadmap memory with the durable apply contract.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f785a8a` | feat: add Phase 1 id repair apply tool |
+
+### Testing
+
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Continue the Phase 1 roadmap with the next bounded vertical slice, likely saved id-repair proposal artifacts or operation group/checkpoint ergonomics.
+
+
 ## Session 2: Improve InkSMCP path editing workflows
 
 **Date**: 2026-06-18
