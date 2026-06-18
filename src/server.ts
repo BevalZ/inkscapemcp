@@ -37,6 +37,7 @@ import {
   queryDocumentSchema,
   refreshInInkscapeSchema,
   renderPreviewSchema,
+  replayOperationsSchema,
   replaceAttributeValuesSchema,
   replaceDocumentSvgSchema,
   replacePathDataSchema,
@@ -59,6 +60,7 @@ import {
   previewSvgOperations,
   queryDocument,
   recoverDocument,
+  replayOperations,
   replaceDocumentSvg,
   rollbackDocument,
 } from "./tools/document.js";
@@ -352,6 +354,17 @@ export function createServer() {
       inputSchema: previewSvgOperationsSchema,
     },
     (input) => runTool("preview_svg_operations", () => previewSvgOperations(input, ctx)),
+  );
+
+  server.registerTool(
+    "replay_operations",
+    {
+      title: "Replay SVG operations",
+      description:
+        "Replay a controlled SVG operation batch against an explicit baseline. Write mode snapshots and rejects stale baselines; dry-run mode returns a diff without writing.",
+      inputSchema: replayOperationsSchema,
+    },
+    (input) => runTool("replay_operations", () => replayOperations(input, ctx)),
   );
 
   server.registerTool(

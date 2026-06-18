@@ -17,7 +17,7 @@ import {
 import { summarizeSvgDependencies } from "../core/svg-dependencies.js";
 import { summarizePathNodesForQuery } from "../core/path-node-summary.js";
 import { findSemanticElementMatches, fingerprintSvgElements } from "../core/semantic-fingerprint.js";
-import { applyOperationsToSvg } from "../core/svg-ops.js";
+import { applyOperationsToSvg, type SvgOperation } from "../core/svg-ops.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
@@ -29,15 +29,18 @@ import {
   previewSvgOperationsSchema,
   queryDocumentSchema,
   recoverDocumentSchema,
+  replayOperationsSchema,
   replaceDocumentSvgSchema,
   rollbackDocumentSchema,
 } from "../core/validation.js";
 import { diffSvgDocuments, type SvgOperationDiff } from "../core/svg-diff.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import {
+  directAttributeUpdatesForAttributeOnlyOperations,
   prePullBeforeCurrentStateRead,
   prePullBeforeCurrentStateWrite,
   tryAutoRefreshInInkscape,
+  tryAutoSyncAttributesInInkscape,
   withGuiRefreshResult,
   withWriteDiagnostics,
   type ToolContext,
@@ -276,7 +279,7 @@ function compactSnapshotDiff(
 }
 
 function compactOperationPreview(
-  input: z.infer<typeof previewSvgOperationsSchema>,
+  input: { docId: string; operations: unknown[] },
   diff: SvgOperationDiff,
   previewResult: { changedElementIds: string[] },
 ) {
@@ -292,6 +295,38 @@ function compactOperationPreview(
     changedElementIds: diff.changedElementIds,
     previewChangedElementIds: previewResult.changedElementIds,
   };
+}
+
+function verifyReplayBaseline(
+  baseline: { revision: number; contentHash: string } | undefined,
+  current: { revision: number; contentHash: string },
+): { revision: number; contentHash: string } {
+  if (!baseline) {
+    throw new InkMcpError("INVALID_INPUT", "replay_operations write mode requires baseline revision and contentHash.", {
+      required: ["baseline.revision", "baseline.contentHash"],
+    });
+  }
+  if (baseline.revision !== current.revision || baseline.contentHash !== current.contentHash) {
+    throw new InkMcpError("SYNC_CONFLICT", "Replay baseline does not match the current document state.", {
+      baseline,
+      current: {
+        revision: current.revision,
+        contentHash: current.contentHash,
+      },
+    });
+  }
+  return baseline;
+}
+
+function assertDeterministicReplayOperations(operations: SvgOperation[]): void {
+  const generatedIdOperations = operations
+    .map((operation, index) => ({ operation, index }))
+    .filter(({ operation }) => operation.type === "add" && operation.attributes?.id === undefined);
+  if (generatedIdOperations.length > 0) {
+    throw new InkMcpError("INVALID_INPUT", "replay_operations requires explicit attributes.id for add operations.", {
+      operationIndexes: generatedIdOperations.map(({ index }) => index),
+    });
+  }
 }
 
 export async function listHistory(input: z.infer<typeof listHistorySchema>, ctx: ToolContext) {
@@ -326,6 +361,109 @@ export async function previewSvgOperations(input: z.infer<typeof previewSvgOpera
     ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
     ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
+}
+
+export async function replayOperations(input: z.infer<typeof replayOperationsSchema>, ctx: ToolContext) {
+  if (input.dryRun) {
+    const prePull = await prePullBeforeCurrentStateRead(ctx, input.docId, {
+      toolName: "replay_operations",
+      skipPrePull: input.skipPrePull,
+      allowStaleRead: input.allowStaleRead,
+    });
+    const svg = await ctx.workspace.readSvg(input.docId);
+    const metadata = await ctx.workspace.readMetadata(input.docId);
+    if (input.baseline) {
+      verifyReplayBaseline(input.baseline, metadata);
+    }
+    const preview = applyOperationsToSvg(svg, input.operations);
+    const diff = diffSvgDocuments(svg, preview.svg);
+    const compact = compactOperationPreview(input, diff, preview.result);
+    const response =
+      input.responseMode === "full"
+        ? {
+            ...compact,
+            responseMode: "full" as const,
+            dryRun: true,
+            baseline: input.baseline,
+            diff,
+          }
+        : {
+            ...compact,
+            dryRun: true,
+            baseline: input.baseline,
+          };
+
+    return {
+      ...response,
+      ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
+      ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
+    };
+  }
+
+  if (!input.baseline) {
+    throw new InkMcpError("INVALID_INPUT", "replay_operations write mode requires baseline revision and contentHash.", {
+      required: ["baseline.revision", "baseline.contentHash"],
+    });
+  }
+  if (input.skipPrePull || input.allowStaleRead) {
+    throw new InkMcpError("INVALID_INPUT", "replay_operations write mode does not support skipPrePull or allowStaleRead.", {
+      dryRunRequired: true,
+    });
+  }
+
+  await prePullBeforeCurrentStateWrite(ctx, input.docId, "replay_operations");
+  assertDeterministicReplayOperations(input.operations);
+  const baseline = input.baseline;
+  const write = await ctx.workspace.writeSvgWithSnapshot(
+    input.docId,
+    "replay_operations",
+    (currentSvg) => {
+      const result = applyOperationsToSvg(currentSvg, input.operations);
+      const diff = diffSvgDocuments(currentSvg, result.svg);
+      return { svg: result.svg, result: { ...result.result, diff } };
+    },
+    {
+      beforeSnapshot: async () => {
+        const metadata = await ctx.workspace.readMetadata(input.docId);
+        verifyReplayBaseline(baseline, metadata);
+      },
+    },
+  );
+  await appendOperationLog(write.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "replay_operations",
+    inputSummary: {
+      operationCount: input.operations.length,
+      baselineRevision: baseline.revision,
+    },
+    snapshotPath: write.snapshotPath,
+    status: "ok",
+  });
+  const directUpdates = directAttributeUpdatesForAttributeOnlyOperations(input.operations);
+  const refresh = directUpdates
+    ? await tryAutoSyncAttributesInInkscape(ctx, directUpdates, input.docId)
+    : await tryAutoRefreshInInkscape(ctx, write.paths);
+  const compact = compactOperationPreview(input, write.result.diff, write.result);
+  const payload =
+    input.responseMode === "full"
+      ? {
+          ...compact,
+          responseMode: "full" as const,
+          dryRun: false,
+          baseline,
+          diff: write.result.diff,
+          snapshotPath: write.snapshotPath,
+          currentSvgPath: write.paths.currentSvg,
+        }
+      : {
+          ...compact,
+          dryRun: false,
+          baseline,
+          snapshotPath: write.snapshotPath,
+          currentSvgPath: write.paths.currentSvg,
+        };
+  return withGuiRefreshResult(withWriteDiagnostics(payload, write), refresh);
 }
 
 export async function diffDocumentSnapshots(input: z.infer<typeof diffDocumentSnapshotsSchema>, ctx: ToolContext) {

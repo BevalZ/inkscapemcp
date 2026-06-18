@@ -237,6 +237,21 @@ export const previewSvgOperationsSchema = z.object({
   allowStaleRead: z.boolean().default(false),
 });
 
+const operationReplayBaselineSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  contentHash: z.string().min(1),
+});
+
+export const replayOperationsSchema = z.object({
+  docId: docIdSchema,
+  operations: z.array(operationSchema).min(1),
+  baseline: operationReplayBaselineSchema.optional(),
+  dryRun: z.boolean().default(false),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
+  skipPrePull: z.boolean().default(false),
+  allowStaleRead: z.boolean().default(false),
+});
+
 export const insertSvgFragmentSchema = z.object({
   docId: docIdSchema,
   parentId: z.string().optional(),

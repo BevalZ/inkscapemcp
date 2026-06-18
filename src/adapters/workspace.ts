@@ -331,10 +331,14 @@ export class Workspace {
     docId: string,
     toolName: string,
     createNextSvg: (currentSvg: string, paths: DocumentPaths) => Promise<{ svg: string; result: T }> | { svg: string; result: T },
+    options: {
+      beforeSnapshot?: (currentSvg: string, paths: DocumentPaths) => Promise<void> | void;
+    } = {},
   ): Promise<{ paths: DocumentPaths; snapshotPath: string; result: T; operationDiff?: OperationDiffArtifact; operationDiffWarning?: Record<string, unknown> }> {
     return this.withDocumentWriteLock(docId, async (paths) => {
       await this.assertDocumentExists(paths);
       const currentSvg = await readFile(paths.currentSvg, "utf8");
+      await options.beforeSnapshot?.(currentSvg, paths);
       const snapshotPath = await this.createSnapshot(paths, toolName, currentSvg);
       const next = await createNextSvg(currentSvg, paths);
       parseFullSvg(next.svg);
