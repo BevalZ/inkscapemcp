@@ -106,3 +106,37 @@ Implemented explicit bidirectional GUI sync with connection identity, GUI pull a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Resolve InkSMCP sync boundaries and roadmap
+
+**Date**: 2026-06-18
+**Task**: Resolve InkSMCP sync boundaries and roadmap
+**Branch**: `main`
+
+### Summary
+
+Implemented remaining sync-boundary foundations, vectorization/import-export/query diagnostics, tests/spec docs, and captured the three-phase advanced InkSMCP roadmap.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `299b076` | (see git log) |
+| `30ac804` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
