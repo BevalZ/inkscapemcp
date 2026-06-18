@@ -86,6 +86,7 @@ Phase 3 candidate tool families:
 - Heavy tools should support compact responses and resource/artifact references to reduce token use.
 - Phase 1 loop 1 established compact query responses, read-only dependency summaries, operation-diff artifacts after successful writes, persisted explicit polling preferences, identity/capability summaries, and GUI diagnostic readiness/remediation output. Future loops should build on these artifacts instead of inventing parallel status or diff formats.
 - Phase 1 loop 2 established `pull_gui_state` `conflictPolicy: "preview_only"`, workspace-confined `merge-previews/` artifacts, and stable merge conflict classes. Future merge/id-repair work should reuse these preview artifacts and conflict class names instead of replacing `current.svg` for review.
+- Phase 1 loop 3 established read-only `diff_document_snapshots` over history snapshots, using the same structured diff engine as operation-diff artifacts with compact/full response modes. Future replay/recovery work should use this inspection contract before applying any mutation.
 
 ### 4. Validation & Error Matrix
 

@@ -419,13 +419,29 @@ export class Workspace {
     return snapshots.sort((a, b) => a.snapshotId.localeCompare(b.snapshotId));
   }
 
-  async rollback(docId: string, snapshotId: string): Promise<{ paths: DocumentPaths; snapshotPath: string; restoredPath: string }> {
-    if (!/^[A-Za-z0-9_.-]+$/.test(snapshotId)) {
-      throw new InkMcpError("INVALID_INPUT", "Invalid snapshot id.", { snapshotId });
+  async readHistorySnapshot(docId: string, snapshotId: string): Promise<{ snapshotId: string; path: string; svg: string; size: number; createdAt: string }> {
+    const paths = this.documentPaths(docId);
+    await this.assertDocumentExists(paths);
+    const snapshotPath = this.historySnapshotPath(docId, snapshotId);
+    const info = await stat(snapshotPath).catch(() => {
+      throw new InkMcpError("DOC_NOT_FOUND", "History snapshot was not found.", { snapshotId });
+    });
+    if (!info.isFile()) {
+      throw new InkMcpError("DOC_NOT_FOUND", "History snapshot was not a file.", { snapshotId });
     }
+    return {
+      snapshotId,
+      path: snapshotPath,
+      svg: await readFile(snapshotPath, "utf8"),
+      size: info.size,
+      createdAt: info.mtime.toISOString(),
+    };
+  }
+
+  async rollback(docId: string, snapshotId: string): Promise<{ paths: DocumentPaths; snapshotPath: string; restoredPath: string }> {
     return this.withDocumentWriteLock(docId, async (paths) => {
       await this.assertDocumentExists(paths);
-      const restoredPath = this.resolveWithinWorkspace("drawings", docId, "history", `${snapshotId}.svg`);
+      const restoredPath = this.historySnapshotPath(docId, snapshotId);
       await stat(restoredPath).catch(() => {
         throw new InkMcpError("DOC_NOT_FOUND", "History snapshot was not found.", { snapshotId });
       });
@@ -629,6 +645,13 @@ export class Workspace {
     const snapshotPath = path.join(paths.historyDir, `${timestampId()}-${toolName}.svg`);
     await this.atomicWrite(snapshotPath, svg);
     return snapshotPath;
+  }
+
+  private historySnapshotPath(docId: string, snapshotId: string): string {
+    if (!/^[A-Za-z0-9_.-]+$/.test(snapshotId)) {
+      throw new InkMcpError("INVALID_INPUT", "Invalid snapshot id.", { snapshotId });
+    }
+    return this.resolveWithinWorkspace("drawings", docId, "history", `${snapshotId}.svg`);
   }
 
   private async createOperationDiffArtifact(

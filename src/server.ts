@@ -12,6 +12,7 @@ import {
   connectInkscapeWindowSchema,
   createDocumentSchema,
   deleteElementSchema,
+  diffDocumentSnapshotsSchema,
   diagnoseInkscapeGuiSchema,
   disconnectInkscapeWindowSchema,
   drawPathSchema,
@@ -48,6 +49,7 @@ import { createToolContext, jsonResult, runTool } from "./tools/context.js";
 import {
   archiveDocument,
   createDocument,
+  diffDocumentSnapshots,
   importSvgDocument,
   listHistory,
   queryDocument,
@@ -401,6 +403,17 @@ export function createServer() {
       inputSchema: listHistorySchema,
     },
     (input) => runTool("list_history", () => listHistory(input, ctx)),
+  );
+
+  server.registerTool(
+    "diff_document_snapshots",
+    {
+      title: "Diff document snapshots",
+      description:
+        "Compare two history snapshots without mutating the current document. Compact mode returns counts and changed ids; full mode includes structured changes.",
+      inputSchema: diffDocumentSnapshotsSchema,
+    },
+    (input) => runTool("diff_document_snapshots", () => diffDocumentSnapshots(input, ctx)),
   );
 
   server.registerTool(

@@ -20,12 +20,14 @@ import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
   createDocumentSchema,
+  diffDocumentSnapshotsSchema,
   importSvgDocumentSchema,
   listHistorySchema,
   queryDocumentSchema,
   replaceDocumentSvgSchema,
   rollbackDocumentSchema,
 } from "../core/validation.js";
+import { diffSvgDocuments, type SvgOperationDiff } from "../core/svg-diff.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import {
   prePullBeforeCurrentStateRead,
@@ -206,12 +208,53 @@ function countElements(element: ElementSummary): number {
   return 1 + element.children.reduce((sum, child) => sum + countElements(child), 0);
 }
 
+function compactSnapshotDiff(
+  docId: string,
+  from: { snapshotId: string; path: string },
+  to: { snapshotId: string; path: string },
+  diff: SvgOperationDiff,
+) {
+  return {
+    ok: true,
+    docId,
+    responseMode: "compact" as const,
+    generatedAt: diff.generatedAt,
+    fromSnapshot: {
+      snapshotId: from.snapshotId,
+      path: from.path,
+    },
+    toSnapshot: {
+      snapshotId: to.snapshotId,
+      path: to.path,
+    },
+    summary: diff.summary,
+    addedElementIds: diff.addedElementIds,
+    removedElementIds: diff.removedElementIds,
+    changedElementIds: diff.changedElementIds,
+  };
+}
+
 export async function listHistory(input: z.infer<typeof listHistorySchema>, ctx: ToolContext) {
   return {
     ok: true,
     docId: input.docId,
     snapshots: await ctx.workspace.listHistory(input.docId),
   };
+}
+
+export async function diffDocumentSnapshots(input: z.infer<typeof diffDocumentSnapshotsSchema>, ctx: ToolContext) {
+  const from = await ctx.workspace.readHistorySnapshot(input.docId, input.fromSnapshotId);
+  const to = await ctx.workspace.readHistorySnapshot(input.docId, input.toSnapshotId);
+  const diff = diffSvgDocuments(from.svg, to.svg);
+  const compact = compactSnapshotDiff(input.docId, from, to, diff);
+  if (input.responseMode === "full") {
+    return {
+      ...compact,
+      responseMode: "full" as const,
+      diff,
+    };
+  }
+  return compact;
 }
 
 export async function rollbackDocument(input: z.infer<typeof rollbackDocumentSchema>, ctx: ToolContext) {

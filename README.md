@@ -191,6 +191,7 @@ Phase 1 document and preview tools:
 - `refresh_in_inkscape`
 - `diagnose_inkscape_gui`
 - `list_history`
+- `diff_document_snapshots`
 - `rollback_document`
 - `archive_document`
 
@@ -215,7 +216,7 @@ For normal edits, prefer in-place tools such as `update_element`, `apply_svg_ope
 
 `query_document` supports `responseMode: "compact" | "standard" | "full"`. Compact mode returns document metadata, target summary, and counts instead of the full element tree. `includeDependencies: true` adds read-only summaries for internal `url(#id)` / `href="#id"` references and definitions. `query_document` can also include semantic fingerprints with `includeFingerprints: true`, and can rank current-document candidates with `matchElementFingerprint`. The matching uses type, ancestry, sibling position, attribute/style hashes, geometry/path fingerprints, text hash, and approximate bounding boxes. These helpers do not automatically rewrite ids or merge objects.
 
-Every document write snapshots `current.svg` before replacement and writes a compact JSON diff artifact under `workspace/drawings/{docId}/operation-diffs/` when possible. Diff artifact failures are warnings and do not roll back a successful SVG write. Rollback also snapshots the current state before restoring history. Physical deletion is not supported; use `archive_document`.
+Every document write snapshots `current.svg` before replacement and writes a compact JSON diff artifact under `workspace/drawings/{docId}/operation-diffs/` when possible. Diff artifact failures are warnings and do not roll back a successful SVG write. Use `diff_document_snapshots` to compare two history snapshots without mutating `current.svg`; compact mode returns summary counts and changed ids, while full mode includes attribute, text, and structure change arrays. Rollback also snapshots the current state before restoring history. Physical deletion is not supported; use `archive_document`.
 
 For automatic GUI refresh, `update_element`, `nudge_path_element`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, attribute-only `apply_svg_operations`, and direct attribute changes from `replace_attribute_values` use Inkscape's active-window `object-set-attribute` action against existing element ids. Edits that add, delete, insert, remove attributes, or change text trigger companion-extension refresh after save; failures return warnings and do not roll back the workspace SVG.
 

@@ -342,6 +342,13 @@ export const listHistorySchema = z.object({
   docId: docIdSchema,
 });
 
+export const diffDocumentSnapshotsSchema = z.object({
+  docId: docIdSchema,
+  fromSnapshotId: z.string().min(1),
+  toSnapshotId: z.string().min(1),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
+});
+
 export const rollbackDocumentSchema = z.object({
   docId: docIdSchema,
   snapshotId: z.string().min(1),

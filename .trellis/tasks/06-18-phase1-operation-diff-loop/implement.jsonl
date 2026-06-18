@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for tool and workspace changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for MCP tool logic, core helpers, and workspace adapters."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Structured error semantics for missing or unsafe snapshots."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test, type-safety, and read-only tool requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Operation log boundaries; this read-only tool must not log writes."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Filesystem persistence and workspace confinement rules."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 diff/recovery contracts."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide routing."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Required because this task reuses existing diff helpers."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Required because changes span schema, workspace adapter, tool response, server registration, docs, and tests."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 roadmap source for operation diff scope."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Debug loop source for operation diff coverage requirements."}

@@ -79,6 +79,7 @@ it("rejects script tags in raw SVG fragments", () => {
   - `export_document_external`
   - `open_in_inkscape`
   - `list_history`
+  - `diff_document_snapshots`
   - `rollback_document`
   - `archive_document`
 
@@ -94,6 +95,7 @@ it("rejects script tags in raw SVG fragments", () => {
   - `workspace/drawings/{docId}/metadata.json`
   - `workspace/drawings/{docId}/history/`
   - `workspace/drawings/{docId}/operation-diffs/`
+  - `workspace/drawings/{docId}/merge-previews/`
   - `workspace/drawings/{docId}/operations.log`
   - `workspace/archive/`
 - Tool response shape:
@@ -280,6 +282,8 @@ Only values from the allowlist may reach Inkscape. Geometry-specific tools shoul
 - `query_path_nodes` is read-only. It returns segment indexes, command names, raw point values, absolute point positions, and available point names for the same supported command set used by `edit_path_nodes`. It must not create snapshots, write operation logs, or trigger Inkscape refresh.
 - `query_document` supports `responseMode: "compact" | "standard" | "full"`. Compact mode should avoid the full tree payload and return metadata, target summary, and counts. `includeDependencies` is read-only and may expose internal definitions, `url(#id)` / `href="#id"` references, and unresolved internal references. `includeFingerprints` and `matchElementFingerprint` may expose type, ancestry, sibling position, attribute/style hashes, geometry/path hashes, text hash, approximate bounding boxes, and ranked match candidates. These helpers must not rewrite ids, mutate SVG, create snapshots, or auto-merge objects.
 - Workspace write operations should create compact operation-diff artifacts under `operation-diffs/` after successful writes when practical. Diff generation failures must not fail or roll back a valid SVG write; return or record an `OPERATION_DIFF_FAILED` warning.
+- `diff_document_snapshots({ docId, fromSnapshotId, toSnapshotId, responseMode? })` is read-only. It reads only files under `workspace/drawings/{docId}/history/`, rejects unsafe or missing snapshot ids, and must not snapshot, write metadata, append operation logs, refresh Inkscape, or update sync connection state.
+- `diff_document_snapshots` supports `responseMode: "compact" | "full"`. Compact returns summary counts plus added/removed/changed ids. Full includes the structured attribute, text, and structure change arrays from the same diff engine used for operation-diff artifacts.
 - Automatic refresh for existing-object attribute updates should prefer direct active-window attribute sync with Inkscape actions of the form `select-by-id:<id>;object-set-attribute:<name>,<value>`. This applies to `update_element`, `replace_path_data`, `append_path_segment`, `edit_path_nodes`, attribute-only `apply_svg_operations`, and direct attribute changes reported by `replace_attribute_values`.
 - Direct active-window attribute sync must only represent attribute setting on existing ids. It must not be used for add/delete/insert operations, text content changes, attribute removal, full-document replacement, or style declaration edits that cannot be mapped back to a single `object-set-attribute` call.
 - Structural automatic GUI refresh should invoke the companion extension after a successful save by default, including on Windows. The extension pulls the workspace SVG into the current window without opening another GUI window. If refresh fails or times out, return a warning and keep `current.svg` authoritative.
