@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for dry-run tool changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for validation, server registration, tools, and core diff reuse."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error semantics for invalid operation previews."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Read-only behavior, schema, and forbidden-pattern requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Confirm dry-run does not write operation logs."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Filesystem persistence boundaries and no-write verification."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 dry-run/replay contracts."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide routing."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Required because dry-run should reuse existing operation and diff engines."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Required because changes span schema, tool registration, docs, and tests."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 source for operation diff, dry-run, replay, and recovery workstream."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Debug hardening source for recovery and replay foundation."}
