@@ -762,3 +762,36 @@ Added query_document pathNodeNormalize absolute mode for document-wide path-node
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Transform path points translate
+
+**Date**: 2026-06-19
+**Task**: Transform path points translate
+**Branch**: `main`
+
+### Summary
+
+Added transform_path_points translate tool for explicit path point movement with snapshot-first writes, operation diagnostics, direct active-window d sync, tests, README docs, and Phase 1 loop 17 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79ef590` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
