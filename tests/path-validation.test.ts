@@ -4,6 +4,7 @@ import {
   appendPathSegmentSchema,
   drawPathSchema,
   editPathNodesSchema,
+  queryDocumentSchema,
   queryPathNodesSchema,
   replacePathDataSchema,
   transformPathPointsSchema,
@@ -94,11 +95,41 @@ describe("path tool validation", () => {
       }),
     ).toThrow();
 
-    expect(() =>
+    expect(
       queryPathNodesSchema.parse({
         docId: "path-doc",
         elementId: "line",
         normalize: "relative",
+      }),
+    ).toMatchObject({ docId: "path-doc", elementId: "line", normalize: "relative" });
+
+    expect(() =>
+      queryPathNodesSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        normalize: "screen",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts relative normalization for document-wide path node queries", () => {
+    expect(
+      queryDocumentSchema.parse({
+        docId: "path-doc",
+        includePathNodes: true,
+        pathNodeNormalize: "relative",
+      }),
+    ).toMatchObject({
+      docId: "path-doc",
+      includePathNodes: true,
+      pathNodeNormalize: "relative",
+    });
+
+    expect(() =>
+      queryDocumentSchema.parse({
+        docId: "path-doc",
+        includePathNodes: true,
+        pathNodeNormalize: "screen",
       }),
     ).toThrow();
   });

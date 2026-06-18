@@ -184,6 +184,63 @@ describe("query_document semantic helpers", () => {
     await expect(workspace.listHistory("paths-doc")).resolves.toEqual([]);
   });
 
+  it("returns compact relative-normalized path-node summaries without full segment arrays", async () => {
+    await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryDocument(
+      {
+        docId: "paths-doc",
+        responseMode: "compact",
+        includePathNodes: true,
+        pathNodeNormalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "compact",
+      counts: {
+        pathCount: 3,
+        describedPathCount: 2,
+        normalizedPathCount: 2,
+        unsupportedPathCount: 1,
+      },
+      pathNodes: {
+        normalize: "relative",
+        paths: [
+          expect.objectContaining({
+            elementId: "body",
+            normalize: "relative",
+            normalizedPointCount: 5,
+            normalizedCommandPoints: { M: ["end"], C: ["c1", "c2", "end"], L: ["end"], Z: [] },
+          }),
+          expect.objectContaining({
+            elementId: "relative-fin",
+            normalize: "relative",
+            normalizedPointCount: 3,
+            normalizedCommandPoints: { M: ["end"], l: ["end"] },
+          }),
+        ],
+        warnings: [
+          {
+            code: "UNSUPPORTED_PATH_DATA",
+            elementId: "arc",
+            pathIndex: 2,
+            details: { command: "A" },
+          },
+        ],
+      },
+    });
+    expect(result.pathNodes?.paths[0]).not.toHaveProperty("segments");
+    expect(result.pathNodes?.paths[0]).not.toHaveProperty("normalizedSegments");
+    await expect(workspace.listHistory("paths-doc")).resolves.toEqual([]);
+  });
+
   it("returns standard path-node segment details for supported commands", async () => {
     await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
 
@@ -307,6 +364,95 @@ describe("query_document semantic helpers", () => {
       },
     });
     expect(result.pathNodes?.paths.find((path) => path.elementId === "relative-fin")).toHaveProperty("segments");
+    expect(result).toHaveProperty("tree");
+  });
+
+  it("returns standard relative-normalized path-node segment details", async () => {
+    await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
+
+    const result = await queryDocument(
+      {
+        docId: "paths-doc",
+        responseMode: "standard",
+        includePathNodes: true,
+        pathNodeNormalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "standard",
+      pathNodes: {
+        normalize: "relative",
+        warnings: [
+          {
+            code: "UNSUPPORTED_PATH_DATA",
+            elementId: "arc",
+            details: { command: "A" },
+          },
+        ],
+      },
+    });
+    const bodyPath = result.pathNodes?.paths.find((path) => path.elementId === "body");
+    const finPath = result.pathNodes?.paths.find((path) => path.elementId === "relative-fin");
+    expect(bodyPath).toMatchObject({
+      d: "M10 30 C25 5 70 5 90 30 L10 30 Z",
+      normalizedSegments: [
+        {
+          index: 0,
+          cmd: "M",
+          relative: false,
+          availablePoints: ["end"],
+          points: { end: { x: 10, y: 30 } },
+        },
+        {
+          index: 1,
+          cmd: "C",
+          relative: false,
+          availablePoints: ["c1", "c2", "end"],
+          points: {
+            c1: { x: 15, y: -25 },
+            c2: { x: 60, y: -25 },
+            end: { x: 80, y: 0 },
+          },
+        },
+        {
+          index: 2,
+          cmd: "L",
+          relative: false,
+          availablePoints: ["end"],
+          points: { end: { x: -80, y: 0 } },
+        },
+        {
+          index: 3,
+          cmd: "Z",
+          relative: false,
+          availablePoints: [],
+          points: {},
+        },
+      ],
+    });
+    expect(finPath).toMatchObject({
+      normalizedSegments: [
+        {
+          index: 0,
+          cmd: "M",
+          points: { end: { x: 35, y: 32 } },
+        },
+        {
+          index: 1,
+          cmd: "l",
+          points: { end: { x: 12, y: 8 } },
+        },
+        {
+          index: 2,
+          cmd: "l",
+          points: { end: { x: -18, y: 2 } },
+        },
+      ],
+    });
+    expect(bodyPath).toHaveProperty("segments");
     expect(result).toHaveProperty("tree");
   });
 

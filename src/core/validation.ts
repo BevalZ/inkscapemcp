@@ -443,7 +443,7 @@ export const transformPathPointsSchema = z.object({
 export const queryPathNodesSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
-  normalize: z.enum(["none", "absolute"]).default("none"),
+  normalize: z.enum(["none", "absolute", "relative"]).default("none"),
   skipPrePull: z.boolean().default(false),
   allowStaleRead: z.boolean().default(false),
 });
@@ -588,7 +588,7 @@ export const queryDocumentSchema = z.object({
   responseMode: z.enum(["compact", "standard", "full"]).default("standard"),
   includeDependencies: z.boolean().default(false),
   includePathNodes: z.boolean().default(false),
-  pathNodeNormalize: z.enum(["none", "absolute"]).default("none"),
+  pathNodeNormalize: z.enum(["none", "absolute", "relative"]).default("none"),
   includeResolvedStyle: z.boolean().default(false),
   includeFingerprints: z.boolean().default(false),
   matchElementFingerprint: semanticFingerprintSchema.optional(),

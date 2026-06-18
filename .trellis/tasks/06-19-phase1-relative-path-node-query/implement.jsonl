@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index for this Phase 1 query slice."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Keep query logic inside established core/tool boundaries."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Preserve explicit path validation errors and read-only failure semantics."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Follow TypeScript, Zod, read-only query, and test expectations."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Continue the Phase 1 richer query/path editing reliability roadmap without parallel contracts."}
+{"file":"docs/inkscape-mcp-plan.md","reason":"Primary product boundary for MCP tools and in-place SVG editing."}
+{"file":"docs/roadmap/phase-1-stabilize-foundations.md","reason":"Phase 1 Workstream 5 and 6 context."}

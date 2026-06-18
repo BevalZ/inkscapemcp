@@ -1369,6 +1369,46 @@ describe("element tools", () => {
     await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
   });
 
+  it("queries relative-normalized path nodes without writing or refreshing", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryPathNodes(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        normalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "sync-doc",
+      elementId: "mouth",
+      normalize: "relative",
+      normalizedSegments: [
+        {
+          index: 0,
+          cmd: "M",
+          points: { end: { x: 100, y: 30 } },
+        },
+        {
+          index: 1,
+          cmd: "c",
+          points: {
+            c1: { x: 18, y: 4 },
+            c2: { x: 31, y: 1 },
+            end: { x: 41, y: -9 },
+          },
+        },
+      ],
+    });
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+  });
+
   it("validates path data without workspace or Inkscape side effects", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
     const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");

@@ -4,9 +4,12 @@ import { assertSafeElementId, createElementId, makeUniqueElementId } from "./ids
 import {
   applyPathNodeEdits,
   describeEditablePathData,
+  normalizedEditablePathSegments,
   pathDataFromInput,
   type EditablePathPoint,
   type EditablePathSegmentInfo,
+  type NormalizedEditablePathSegmentInfo,
+  type PathNodeNormalizeMode,
   type PathNodeEdit,
   type PathSegment,
 } from "./path-data.js";
@@ -90,17 +93,11 @@ export interface PathNodesQueryResult {
   d: string;
   segmentCount: number;
   segments: EditablePathSegmentInfo[];
-  normalize?: "absolute";
+  normalize?: PathNodeNormalizeMode;
   normalizedSegments?: NormalizedPathSegmentInfo[];
 }
 
-export interface NormalizedPathSegmentInfo {
-  index: number;
-  cmd: EditablePathSegmentInfo["cmd"];
-  relative: boolean;
-  availablePoints: EditablePathSegmentInfo["availablePoints"];
-  points: EditablePathSegmentInfo["absolutePoints"];
-}
+export type NormalizedPathSegmentInfo = NormalizedEditablePathSegmentInfo;
 
 export interface PathPointSelection {
   segmentIndex: number;
@@ -395,7 +392,7 @@ export function queryPathNodesInSvg(
   svg: string,
   input: {
     elementId: string;
-    normalize?: "none" | "absolute";
+    normalize?: "none" | PathNodeNormalizeMode;
   },
 ): PathNodesQueryResult {
   const document = parseSvgDocument(svg);
@@ -410,16 +407,10 @@ export function queryPathNodesInSvg(
     d,
     segmentCount: segments.length,
     segments,
-    ...(input.normalize === "absolute"
+    ...(input.normalize === "absolute" || input.normalize === "relative"
       ? {
-          normalize: "absolute" as const,
-          normalizedSegments: segments.map((segment) => ({
-            index: segment.index,
-            cmd: segment.cmd,
-            relative: segment.relative,
-            availablePoints: segment.availablePoints,
-            points: segment.absolutePoints,
-          })),
+          normalize: input.normalize,
+          normalizedSegments: normalizedEditablePathSegments(segments, input.normalize),
         }
       : {}),
   };

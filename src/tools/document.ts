@@ -232,7 +232,7 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
                   pathCount: pathNodes.totalPathCount,
                   describedPathCount: pathNodes.describedPathCount,
                   unsupportedPathCount: pathNodes.unsupportedPathCount,
-                  ...(pathNodes.normalize === "absolute"
+                  ...(pathNodes.normalize
                     ? { normalizedPathCount: pathNodes.describedPathCount }
                     : {}),
                 }

@@ -17,15 +17,25 @@ export type EditablePathSegment =
 export type EditablePathPoint = "end" | "c1" | "c2";
 
 export type EditablePathPointMap = Partial<Record<EditablePathPoint, { x: number; y: number }>>;
+export type PathNodeNormalizeMode = "absolute" | "relative";
 
 export interface EditablePathSegmentInfo {
   index: number;
   cmd: EditablePathSegment["cmd"];
   relative: boolean;
+  basePoint: { x: number; y: number };
   raw: EditablePathSegment;
   availablePoints: EditablePathPoint[];
   points: EditablePathPointMap;
   absolutePoints: EditablePathPointMap;
+}
+
+export interface NormalizedEditablePathSegmentInfo {
+  index: number;
+  cmd: EditablePathSegmentInfo["cmd"];
+  relative: boolean;
+  availablePoints: EditablePathSegmentInfo["availablePoints"];
+  points: EditablePathPointMap;
 }
 
 export type PathNodeEdit =
@@ -223,6 +233,37 @@ export function describeEditablePathData(pathData: string): EditablePathSegmentI
   return describeEditablePathSegments(segments);
 }
 
+export function normalizedEditablePathSegments(
+  segments: EditablePathSegmentInfo[],
+  mode: PathNodeNormalizeMode,
+): NormalizedEditablePathSegmentInfo[] {
+  return segments.map((segment) => ({
+    index: segment.index,
+    cmd: segment.cmd,
+    relative: segment.relative,
+    availablePoints: segment.availablePoints,
+    points: normalizedEditablePathPoints(segment, mode),
+  }));
+}
+
+export function normalizedEditablePathPoints(
+  segment: EditablePathSegmentInfo,
+  mode: PathNodeNormalizeMode,
+): EditablePathPointMap {
+  if (mode === "absolute") return segment.absolutePoints;
+
+  const points: EditablePathPointMap = {};
+  for (const pointName of segment.availablePoints) {
+    const absolutePoint = segment.absolutePoints[pointName];
+    if (!absolutePoint) continue;
+    points[pointName] = {
+      x: absolutePoint.x - segment.basePoint.x,
+      y: absolutePoint.y - segment.basePoint.y,
+    };
+  }
+  return points;
+}
+
 function describeEditablePathSegments(segments: EditablePathSegment[]): EditablePathSegmentInfo[] {
   let current = { x: 0, y: 0 };
   let subpathStart = { x: 0, y: 0 };
@@ -273,6 +314,7 @@ function describeEditablePathSegments(segments: EditablePathSegment[]): Editable
       index,
       cmd: segment.cmd,
       relative,
+      basePoint: { ...base },
       raw: segment,
       availablePoints: availablePathPoints(segment),
       points,

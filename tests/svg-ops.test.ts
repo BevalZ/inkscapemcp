@@ -1618,6 +1618,70 @@ describe("SVG operations", () => {
     });
   });
 
+  it("returns an explicit relative normalized path-node view when requested", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 L15 11 C17 14 19 16 21 18 q1 -2 3 0 z",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = queryPathNodesInSvg(svg, { elementId: "editable-path", normalize: "relative" });
+
+    expect(result).toMatchObject({
+      elementId: "editable-path",
+      normalize: "relative",
+      segmentCount: 5,
+      normalizedSegments: [
+        {
+          index: 0,
+          cmd: "M",
+          relative: false,
+          availablePoints: ["end"],
+          points: { end: { x: 10, y: 10 } },
+        },
+        {
+          index: 1,
+          cmd: "L",
+          relative: false,
+          availablePoints: ["end"],
+          points: { end: { x: 5, y: 1 } },
+        },
+        {
+          index: 2,
+          cmd: "C",
+          relative: false,
+          availablePoints: ["c1", "c2", "end"],
+          points: {
+            c1: { x: 2, y: 3 },
+            c2: { x: 4, y: 5 },
+            end: { x: 6, y: 7 },
+          },
+        },
+        {
+          index: 3,
+          cmd: "q",
+          relative: true,
+          availablePoints: ["c1", "end"],
+          points: {
+            c1: { x: 1, y: -2 },
+            end: { x: 3, y: 0 },
+          },
+        },
+        {
+          index: 4,
+          cmd: "z",
+          relative: false,
+          availablePoints: [],
+          points: {},
+        },
+      ],
+    });
+    expect(result.segments[1]).toMatchObject({
+      points: { end: { x: 15, y: 11 } },
+      absolutePoints: { end: { x: 15, y: 11 } },
+    });
+  });
+
   it("rejects node editing for unsupported path commands", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "arc-path",
