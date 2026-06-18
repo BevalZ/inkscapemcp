@@ -1436,3 +1436,36 @@ Implemented Phase 1 raw editable path support for H/h and V/v commands across va
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: Phase 1 path validation exact diagnostics
+
+**Date**: 2026-06-19
+**Task**: Phase 1 path validation exact diagnostics
+**Branch**: `main`
+
+### Summary
+
+Added exact validate_path_data failure diagnostics for malformed and unsupported path data, including command, segment, token, parameter-count, offset, and invalid-text details while preserving the read-only no-workspace contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8c0096b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
