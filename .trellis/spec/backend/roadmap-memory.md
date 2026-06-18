@@ -99,6 +99,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 13 established read-only merge preview artifact inspection. `list_merge_previews` and `read_merge_preview` expose saved `pull_gui_state({ conflictPolicy: "preview_only" })` artifacts without GUI pre-pull, snapshots, metadata writes, operation logs, operation-diff artifacts, or Inkscape refresh. SVG content is returned only when `includeSvg: true`.
 - Phase 1 loop 14 established `query_document({ includeResolvedStyle: true })` as a read-only effective SVG style summary. It resolves presentation attributes plus inline `style` declarations with inheritance and local override source tracking, supports compact and standard/full response modes, and reports unsupported stylesheet cascade, CSS variables, and `!important` as limitations instead of pretending to compute renderer CSS.
 - Phase 1 loop 15 established `query_path_nodes({ normalize: "absolute" })` as an explicit read-only normalized path-node view. The default remains `normalize: "none"` for compatibility; absolute mode adds normalized segment point data derived from the existing path parser without rewriting SVG or changing edit semantics. Future document-wide normalized path summaries and edit-side normalization should reuse this contract.
+- Phase 1 loop 16 established `query_document({ includePathNodes: true, pathNodeNormalize: "absolute" })` as the document-wide counterpart to the single-path normalized query. The default remains `pathNodeNormalize: "none"`; absolute mode adds token-conscious compact normalized summaries and full normalized segment point details without mutating SVG or changing unsupported-path warning behavior.
 
 ### 4. Validation & Error Matrix
 
@@ -625,6 +626,78 @@ const result = queryPathNodesInSvg(svg, {
 ```
 
 Keep normalization as an explicit read-side view. Later write tools must define their own coordinate contract instead of inferring mutation behavior from this query option.
+
+## Scenario: Document Path Node Normalized Summary Contract
+
+### 1. Scope / Trigger
+
+- Trigger: inspecting all editable paths in stable absolute coordinates before planning multi-path edits.
+- Scope: `query_document({ includePathNodes: true, pathNodeNormalize?: "none" | "absolute" })`.
+- Out of scope: changing `query_path_nodes`, changing `edit_path_nodes`, writing normalized path data, adding arc support, and adding relative normalized output.
+
+### 2. Signatures
+
+- Tool option: `query_document({ docId, elementId?, includePathNodes: true, pathNodeNormalize?, responseMode?, skipPrePull?, allowStaleRead? })`
+- `pathNodeNormalize`: `"none" | "absolute"`, default `"none"`.
+- `responseMode`: `"compact" | "standard" | "full"`, default `"standard"`.
+
+### 3. Contracts
+
+- The option is read-only: no snapshots, metadata writes, operation logs, operation-diff artifacts, preview artifacts, or Inkscape refresh.
+- Current-state read pre-pull behavior is unchanged for active bidirectional documents.
+- `pathNodeNormalize` is meaningful only with `includePathNodes: true`.
+- `pathNodeNormalize: "none"` preserves the existing document path-node summary shape.
+- `pathNodeNormalize: "absolute"` adds `pathNodes.normalize: "absolute"`.
+- Compact mode remains token-conscious and does not include full `segments` or `normalizedSegments`; it may include normalized point counts and command-to-point-name summaries.
+- Standard/full modes include `normalizedSegments` beside existing raw `segments` for supported paths.
+- `normalizedSegments` preserve segment `index`, original `cmd`, `relative`, `availablePoints`, and absolute point coordinates.
+- Unsupported path data remains a per-path `UNSUPPORTED_PATH_DATA` warning, not a whole-query failure.
+
+### 4. Validation & Error Matrix
+
+- Invalid `pathNodeNormalize` value -> schema validation failure.
+- `pathNodeNormalize: "absolute"` without `includePathNodes: true` -> accepted but no path-node payload is produced.
+- Missing target `elementId` -> existing `query_document` `INVALID_INPUT` response, no mutation.
+- Unsupported path command -> per-path `UNSUPPORTED_PATH_DATA` warning with command details, no mutation.
+- Active bidirectional pre-pull failure with stale reads disallowed -> sync/Inkscape error, no query result.
+- Active bidirectional pre-pull failure with `allowStaleRead: true` -> stale-read warning and workspace-based query result.
+
+### 5. Good/Base/Bad Cases
+
+- Good: compact document query reports which paths have relative segments and what normalized point names are available without returning full segment arrays.
+- Good: standard/full document query returns raw segment details plus absolute normalized points for each supported path.
+- Base: one path contains an arc; supported paths are described and the arc path is reported in warnings.
+- Bad: a document query rewrites relative path commands to absolute commands in `current.svg`.
+- Bad: failing the whole query because one path has unsupported data.
+
+### 6. Tests Required
+
+- Compact normalized document query returns normalized counts/summaries and omits `segments` / `normalizedSegments`.
+- Standard/full normalized document query includes `normalizedSegments` with absolute points for relative `M/L/C/Q` data.
+- Unsupported paths remain structured warnings.
+- Read-only behavior: no auto-refresh and no history snapshots.
+- Existing default `includePathNodes` tests remain green without specifying `pathNodeNormalize`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not make document-wide query normalize by editing every path.
+await applySvgOperations({ docId, operations: absoluteRewriteOperations });
+```
+
+#### Correct
+
+```typescript
+const result = await queryDocument({
+  docId,
+  includePathNodes: true,
+  pathNodeNormalize: "absolute",
+});
+```
+
+Keep document-wide normalization as an inspection surface. Mutation must remain in explicit path-edit tools with their own confirmation and refresh contracts.
 
 ## Phase Summary
 

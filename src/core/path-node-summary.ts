@@ -19,17 +19,30 @@ export interface CompactPathNodeSummary {
   commandCounts: Record<string, number>;
   relativeSegmentCount: number;
   editablePointCount: number;
+  normalize?: "absolute";
+  normalizedPointCount?: number;
+  normalizedCommandPoints?: Record<string, string[]>;
 }
 
 export interface FullPathNodeSummary extends CompactPathNodeSummary {
   d: string;
   segments: EditablePathSegmentInfo[];
+  normalizedSegments?: NormalizedPathNodeSegmentSummary[];
+}
+
+export interface NormalizedPathNodeSegmentSummary {
+  index: number;
+  cmd: EditablePathSegmentInfo["cmd"];
+  relative: boolean;
+  availablePoints: EditablePathSegmentInfo["availablePoints"];
+  points: EditablePathSegmentInfo["absolutePoints"];
 }
 
 export type QueryPathNodeSummary = {
   totalPathCount: number;
   describedPathCount: number;
   unsupportedPathCount: number;
+  normalize?: "absolute";
   paths: CompactPathNodeSummary[] | FullPathNodeSummary[];
   warnings: PathNodeWarning[];
 };
@@ -37,9 +50,11 @@ export type QueryPathNodeSummary = {
 export function summarizePathNodesForQuery(
   root: XmlElement,
   responseMode: "compact" | "standard" | "full",
+  options: { normalize?: "none" | "absolute" } = {},
 ): QueryPathNodeSummary {
   const pathElements = walkElements(root).filter((element) => (element.localName ?? element.nodeName) === "path");
   const includeSegments = responseMode !== "compact";
+  const includeNormalized = options.normalize === "absolute";
   const paths: Array<CompactPathNodeSummary | FullPathNodeSummary> = [];
   const warnings: PathNodeWarning[] = [];
 
@@ -59,8 +74,17 @@ export function summarizePathNodesForQuery(
 
     try {
       const segments = describeEditablePathData(d);
-      const compact = compactPathNodeSummary({ elementId, pathIndex, segments });
-      paths.push(includeSegments ? { ...compact, d, segments } : compact);
+      const compact = compactPathNodeSummary({ elementId, pathIndex, segments, normalize: options.normalize });
+      paths.push(
+        includeSegments
+          ? {
+              ...compact,
+              d,
+              segments,
+              ...(includeNormalized ? { normalizedSegments: normalizedSegments(segments) } : {}),
+            }
+          : compact,
+      );
     } catch (error) {
       warnings.push(pathNodeWarning({ elementId, pathIndex, error }));
     }
@@ -70,6 +94,7 @@ export function summarizePathNodesForQuery(
     totalPathCount: pathElements.length,
     describedPathCount: paths.length,
     unsupportedPathCount: warnings.length,
+    ...(includeNormalized ? { normalize: "absolute" as const } : {}),
     paths: includeSegments ? (paths as FullPathNodeSummary[]) : (paths as CompactPathNodeSummary[]),
     warnings,
   };
@@ -79,7 +104,9 @@ function compactPathNodeSummary(input: {
   elementId?: string;
   pathIndex: number;
   segments: EditablePathSegmentInfo[];
+  normalize?: "none" | "absolute";
 }): CompactPathNodeSummary {
+  const includeNormalized = input.normalize === "absolute";
   return {
     elementId: input.elementId,
     pathIndex: input.pathIndex,
@@ -87,7 +114,36 @@ function compactPathNodeSummary(input: {
     commandCounts: commandCounts(input.segments),
     relativeSegmentCount: input.segments.filter((segment) => segment.relative).length,
     editablePointCount: input.segments.reduce((sum, segment) => sum + segment.availablePoints.length, 0),
+    ...(includeNormalized
+      ? {
+          normalize: "absolute" as const,
+          normalizedPointCount: input.segments.reduce((sum, segment) => sum + Object.keys(segment.absolutePoints).length, 0),
+          normalizedCommandPoints: normalizedCommandPoints(input.segments),
+        }
+      : {}),
   };
+}
+
+function normalizedSegments(segments: EditablePathSegmentInfo[]): NormalizedPathNodeSegmentSummary[] {
+  return segments.map((segment) => ({
+    index: segment.index,
+    cmd: segment.cmd,
+    relative: segment.relative,
+    availablePoints: segment.availablePoints,
+    points: segment.absolutePoints,
+  }));
+}
+
+function normalizedCommandPoints(segments: EditablePathSegmentInfo[]): Record<string, string[]> {
+  const points: Record<string, Set<string>> = {};
+  for (const segment of segments) {
+    const commandPoints = points[segment.cmd] ?? new Set<string>();
+    for (const pointName of Object.keys(segment.absolutePoints).sort()) {
+      commandPoints.add(pointName);
+    }
+    points[segment.cmd] = commandPoints;
+  }
+  return Object.fromEntries(Object.entries(points).map(([command, names]) => [command, [...names].sort()]));
 }
 
 function commandCounts(segments: EditablePathSegmentInfo[]): Record<string, number> {

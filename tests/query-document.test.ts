@@ -135,6 +135,55 @@ describe("query_document semantic helpers", () => {
     await expect(workspace.listHistory("paths-doc")).resolves.toEqual([]);
   });
 
+  it("returns compact absolute-normalized path-node summaries without full segment arrays", async () => {
+    await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryDocument(
+      {
+        docId: "paths-doc",
+        responseMode: "compact",
+        includePathNodes: true,
+        pathNodeNormalize: "absolute",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "compact",
+      counts: {
+        pathCount: 3,
+        describedPathCount: 2,
+        normalizedPathCount: 2,
+        unsupportedPathCount: 1,
+      },
+      pathNodes: {
+        normalize: "absolute",
+        paths: [
+          expect.objectContaining({
+            elementId: "body",
+            normalize: "absolute",
+            normalizedPointCount: 5,
+            normalizedCommandPoints: { M: ["end"], C: ["c1", "c2", "end"], L: ["end"], Z: [] },
+          }),
+          expect.objectContaining({
+            elementId: "relative-fin",
+            normalize: "absolute",
+            normalizedPointCount: 3,
+            normalizedCommandPoints: { M: ["end"], l: ["end"] },
+          }),
+        ],
+      },
+    });
+    expect(result.pathNodes?.paths[0]).not.toHaveProperty("segments");
+    expect(result.pathNodes?.paths[0]).not.toHaveProperty("normalizedSegments");
+    await expect(workspace.listHistory("paths-doc")).resolves.toEqual([]);
+  });
+
   it("returns standard path-node segment details for supported commands", async () => {
     await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
 
@@ -198,6 +247,66 @@ describe("query_document semantic helpers", () => {
         ],
       },
     });
+    expect(result).toHaveProperty("tree");
+  });
+
+  it("returns standard absolute-normalized path-node segment details", async () => {
+    await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
+
+    const result = await queryDocument(
+      {
+        docId: "paths-doc",
+        responseMode: "standard",
+        includePathNodes: true,
+        pathNodeNormalize: "absolute",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "standard",
+      pathNodes: {
+        normalize: "absolute",
+        paths: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "relative-fin",
+            d: "M35 32 l12 8 l-18 2",
+            normalizedSegments: [
+              {
+                index: 0,
+                cmd: "M",
+                relative: false,
+                availablePoints: ["end"],
+                points: { end: { x: 35, y: 32 } },
+              },
+              {
+                index: 1,
+                cmd: "l",
+                relative: true,
+                availablePoints: ["end"],
+                points: { end: { x: 47, y: 40 } },
+              },
+              {
+                index: 2,
+                cmd: "l",
+                relative: true,
+                availablePoints: ["end"],
+                points: { end: { x: 29, y: 42 } },
+              },
+            ],
+          }),
+        ]),
+        warnings: [
+          {
+            code: "UNSUPPORTED_PATH_DATA",
+            elementId: "arc",
+            details: { command: "A" },
+          },
+        ],
+      },
+    });
+    expect(result.pathNodes?.paths.find((path) => path.elementId === "relative-fin")).toHaveProperty("segments");
     expect(result).toHaveProperty("tree");
   });
 

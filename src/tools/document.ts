@@ -202,7 +202,9 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
   const documentSummary = summarizeDocument(document, paths.currentSvg, input.docId, metadata.title);
   const tree = summarizeElement(target);
   const dependencySummary = input.includeDependencies ? summarizeSvgDependencies(svg) : undefined;
-  const pathNodes = input.includePathNodes ? summarizePathNodesForQuery(target, input.responseMode) : undefined;
+  const pathNodes = input.includePathNodes
+    ? summarizePathNodesForQuery(target, input.responseMode, { normalize: input.pathNodeNormalize })
+    : undefined;
   const resolvedStyle = input.includeResolvedStyle
     ? summarizeResolvedStyles(svg, {
         targetElementId: input.elementId,
@@ -230,6 +232,9 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
                   pathCount: pathNodes.totalPathCount,
                   describedPathCount: pathNodes.describedPathCount,
                   unsupportedPathCount: pathNodes.unsupportedPathCount,
+                  ...(pathNodes.normalize === "absolute"
+                    ? { normalizedPathCount: pathNodes.describedPathCount }
+                    : {}),
                 }
               : {}),
             ...(resolvedStyle
