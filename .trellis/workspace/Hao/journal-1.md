@@ -1469,3 +1469,45 @@ Added exact validate_path_data failure diagnostics for malformed and unsupported
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: Phase 1 extension self-check diagnostics
+
+**Date**: 2026-06-19
+**Task**: Phase 1 extension self-check diagnostics
+**Branch**: `main`
+
+### Summary
+
+Added read-only companion extension self-check diagnostics for installed files, .inx action declarations, extension config, and workspace root mismatch; updated tests, README, and roadmap memory.
+
+### Main Changes
+
+- Added structured `extensionSelfCheck` output to `diagnose_inkscape_gui` for installed companion files, pull/push `.inx` declarations, Python command wiring, config JSON validity, and readiness.
+- Added `workspaceRootCheck` at the tool layer so a stale `inksmcp-extension.json` workspace root downgrades same-window refresh and bidirectional readiness with exact remediation.
+- Added adapter and tool tests for valid installs, stale declarations, invalid config, and workspace root mismatch.
+- Updated README and roadmap memory with the read-only diagnostic contract.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `504df11` | feat: add extension self-check diagnostics |
+| `1d827b6` | chore(task): add phase1 extension diagnostics task |
+
+### Testing
+
+- [OK] `npx vitest run tests/inkscape-cli.test.ts tests/preview.test.ts tests/inkscape-extension.test.ts`
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension\inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
