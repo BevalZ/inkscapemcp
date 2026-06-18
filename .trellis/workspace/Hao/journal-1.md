@@ -1271,3 +1271,36 @@ Added Phase 1 relative normalized path-node queries for query_path_nodes and que
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: Path Point Skew Transform
+
+**Date**: 2026-06-19
+**Task**: Path Point Skew Transform
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 skew transform support to transform_path_points with schema, core path-point mapping, tests, README, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `08ee10f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
