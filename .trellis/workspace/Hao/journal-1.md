@@ -828,3 +828,36 @@ Added validate_path_data read-only path preflight with compact summaries, typed 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Absolute path point transform
+
+**Date**: 2026-06-19
+**Task**: Absolute path point transform
+**Branch**: `main`
+
+### Summary
+
+Extended transform_path_points with set_absolute for exact endpoint/control-handle placement, preserving relative path commands and existing snapshot/log/direct-sync write contracts with schema, core, tool tests, README docs, and Phase 1 loop 19 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `52ebb1e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
