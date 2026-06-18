@@ -1001,6 +1001,60 @@ describe("element tools", () => {
     expect(history[0].snapshotId).toContain("transform_path_points");
   });
 
+  it("reflects selected path points across an arbitrary line with direct active-window attribute sync", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "reflect_line",
+          origin: { x: 100, y: 30 },
+          angleDegrees: 45,
+        },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "mouth", attributeName: "d", value: "M100 30 c18 4 31 1 -9 41" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "mouth",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 0, point: "end" },
+        { segmentIndex: 1, point: "end" },
+      ],
+      editedSegments: [0, 1],
+      transform: {
+        type: "reflect_line",
+        origin: { x: 100, y: 30 },
+        angleDegrees: 45,
+      },
+      changed: { d: { from: "M100 30c18 4 31 1 41-9", to: "M100 30 c18 4 31 1 -9 41" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30 c18 4 31 1 -9 41"');
+    const history = await workspace.listHistory("sync-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
   it("rejects invalid point transforms without writing history", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
 
@@ -1133,6 +1187,32 @@ describe("element tools", () => {
             axis: "diagonal",
             origin: { x: 100, y: 30 },
           } as never,
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow();
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
+  });
+
+  it("rejects invalid reflect-line transforms without writing history", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "sync-doc",
+          elementId: "mouth",
+          pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+          transform: {
+            type: "reflect_line",
+            origin: { x: 100, y: 30 },
+            angleDegrees: Number.NaN,
+          },
         },
         { workspace, inkscape, autoRefresh: { enabled: true } },
       ),

@@ -1222,6 +1222,118 @@ describe("SVG operations", () => {
     });
   });
 
+  it("reflects selected path points across a zero-degree line", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 c2 0 6 0 10 0 L30 20",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "c1" },
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: {
+        type: "reflect_line",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 0,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 c2 0 6 0 10 0 L30 0",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 1, point: "c1" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [1, 2],
+      transform: {
+        type: "reflect_line",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 0,
+      },
+    });
+  });
+
+  it("reflects selected path points across a ninety-degree line", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 c2 0 6 0 10 0 L30 20",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "c1" },
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: {
+        type: "reflect_line",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 90,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 c-2 0 6 0 -10 0 L-10 20",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 1, point: "c1" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [1, 2],
+      transform: {
+        type: "reflect_line",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 90,
+      },
+    });
+  });
+
+  it("reflects point-type-selected endpoints across an oblique line", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l10 0 q2 4 20 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "point_type",
+        pointTypes: ["end"],
+      },
+      transform: {
+        type: "reflect_line",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 45,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 l0 10 q2 4 0 20",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 0, point: "end" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [0, 1, 2],
+    });
+  });
+
   it("skews selected path points along the x axis around an explicit absolute origin", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",

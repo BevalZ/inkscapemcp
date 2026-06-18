@@ -759,6 +759,77 @@ describe("path tool validation", () => {
     ).toThrow();
   });
 
+  it("accepts reflect-line point transforms and rejects invalid reflect-line inputs", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "reflect_line",
+          origin: { x: 10, y: 20 },
+          angleDegrees: 0,
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "reflect_line",
+        origin: { x: 10, y: 20 },
+        angleDegrees: 0,
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "reflect_line",
+          origin: { x: 10, y: 20 },
+          angleDegrees: -45,
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "reflect_line",
+        angleDegrees: -45,
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "reflect_line",
+          origin: { x: Number.NaN, y: 20 },
+          angleDegrees: 45,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "reflect_line",
+          origin: { x: 10, y: 20 },
+          angleDegrees: Number.POSITIVE_INFINITY,
+        },
+      }),
+    ).toThrow();
+  });
+
   it("accepts skew point transforms and rejects invalid skew inputs", () => {
     expect(
       transformPathPointsSchema.parse({

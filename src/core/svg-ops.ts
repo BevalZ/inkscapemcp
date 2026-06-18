@@ -190,6 +190,11 @@ export type PathPointTransform =
       origin: { x: number; y: number };
     }
   | {
+      type: "reflect_line";
+      origin: { x: number; y: number };
+      angleDegrees: number;
+    }
+  | {
       type: "skew";
       axis: "x" | "y";
       origin: { x: number; y: number };
@@ -741,6 +746,17 @@ function validatePathPointTransform(transform: PathPointTransform): void {
     return;
   }
 
+  if (transform.type === "reflect_line") {
+    if (
+      !Number.isFinite(transform.origin.x) ||
+      !Number.isFinite(transform.origin.y) ||
+      !Number.isFinite(transform.angleDegrees)
+    ) {
+      throw new InkMcpError("INVALID_INPUT", "Reflect-line transform origin and angleDegrees must be finite.", transform);
+    }
+    return;
+  }
+
   if (transform.type === "skew") {
     if (transform.axis !== "x" && transform.axis !== "y") {
       throw new InkMcpError("INVALID_INPUT", "Skew transform axis is unsupported.", {
@@ -781,6 +797,7 @@ function validateResolvedPathPointTransform(points: PathPointSelection[], transf
     transform.type === "scale" ||
     transform.type === "rotate" ||
     transform.type === "reflect" ||
+    transform.type === "reflect_line" ||
     transform.type === "skew"
   ) return;
   if (transform.points.length !== points.length) {
@@ -1163,6 +1180,27 @@ function pathPointTransformEdits(
           point: point.point,
           x: transform.axis === "vertical" ? transform.origin.x * 2 - absolutePoint.x : absolutePoint.x,
           y: transform.axis === "horizontal" ? transform.origin.y * 2 - absolutePoint.y : absolutePoint.y,
+        };
+      })
+      .sort((left, right) => left.segmentIndex - right.segmentIndex);
+  }
+
+  if (transform.type === "reflect_line") {
+    const radians = transform.angleDegrees * (Math.PI / 180);
+    const unitX = Math.cos(radians);
+    const unitY = Math.sin(radians);
+    return points
+      .map((point) => {
+        const absolutePoint = getSelectedAbsolutePoint(segments, point);
+        const offsetX = absolutePoint.x - transform.origin.x;
+        const offsetY = absolutePoint.y - transform.origin.y;
+        const dot = offsetX * unitX + offsetY * unitY;
+        return {
+          type: "set_point_absolute" as const,
+          segmentIndex: point.segmentIndex,
+          point: point.point,
+          x: transform.origin.x + 2 * dot * unitX - offsetX,
+          y: transform.origin.y + 2 * dot * unitY - offsetY,
         };
       })
       .sort((left, right) => left.segmentIndex - right.segmentIndex);

@@ -398,6 +398,14 @@ export const transformPathPointsSchema = z.object({
       }),
     }),
     z.object({
+      type: z.literal("reflect_line"),
+      origin: z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      }),
+      angleDegrees: z.number().finite(),
+    }),
+    z.object({
       type: z.literal("skew"),
       axis: z.enum(["x", "y"]),
       origin: z.object({
