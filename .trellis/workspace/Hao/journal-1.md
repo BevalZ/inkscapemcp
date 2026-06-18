@@ -1073,3 +1073,36 @@ Added the Phase 1 transform_path_points segment_list selector for deterministic 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Path point command selector
+
+**Date**: 2026-06-19
+**Task**: Path point command selector
+**Branch**: `main`
+
+### Summary
+
+Added the Phase 1 transform_path_points command selector for case-sensitive supported path command point edits, with validation, core/tool tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d03544b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
