@@ -663,3 +663,36 @@ Implemented read-only propose_id_repairs for baseline snapshot to current SVG se
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Resolved style query summaries
+
+**Date**: 2026-06-19
+**Task**: Resolved style query summaries
+**Branch**: `main`
+
+### Summary
+
+Added query_document includeResolvedStyle for read-only presentation/inline style summaries with inheritance, source tracking, unsupported CSS limitations, tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35d6208` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
