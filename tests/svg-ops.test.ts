@@ -773,6 +773,96 @@ describe("SVG operations", () => {
     ).toThrow("maxDistance");
   });
 
+  it("transforms radius-selected path points using inclusive absolute distance", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "radius",
+        x: 18,
+        y: 15,
+        radius: 5,
+        pointTypes: ["end", "c1"],
+      },
+      transform: { type: "translate", dx: 1, dy: -2 },
+    });
+
+    expect(result.result).toMatchObject({
+      elementId: "editable-path",
+      previousD: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0",
+      nextD: "M10 10 l6 -1 c3 1 4 5 7 5 q2 -4 3 0",
+      selectedPointCount: 4,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "c1" },
+        { segmentIndex: 2, point: "end" },
+        { segmentIndex: 3, point: "c1" },
+      ],
+      editedSegments: [1, 2, 3],
+    });
+  });
+
+  it("applies set_absolute to radius-selected points when target counts match", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 L20 20 L30 30",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "radius",
+        x: 25,
+        y: 25,
+        radius: 8,
+        pointTypes: ["end"],
+      },
+      transform: {
+        type: "set_absolute",
+        points: [
+          { x: 21, y: 19 },
+          { x: 32, y: 28 },
+        ],
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 L21 19 L32 28",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+    });
+  });
+
+  it("rejects radius selectors that match no editable points", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          type: "radius",
+          x: 20,
+          y: 20,
+          radius: 2,
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("matched no editable points");
+  });
+
   it("rejects set_absolute when target point count does not match the selection", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",

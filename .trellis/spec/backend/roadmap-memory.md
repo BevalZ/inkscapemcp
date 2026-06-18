@@ -107,6 +107,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 21 extended `transform_path_points.pointSelector` with `{ type: "bbox" }` selection over absolute path-node coordinates. It keeps legacy explicit `{ points }` selectors valid, selects edge-inclusive `end`/`c1`/`c2` points from one existing path, rejects invalid or empty bbox selections before snapshot/write, and reuses the existing translate, `set_absolute`, `set_relative`, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 - Phase 1 loop 22 extended `transform_path_points.pointSelector` with `{ type: "segment_range" }` selection over inclusive path segment indexes. It keeps legacy explicit and bbox selectors valid, selects editable `end`/`c1`/`c2` points in path order, rejects invalid, out-of-range, or empty ranges before snapshot/write, and reuses the existing transform, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 - Phase 1 loop 23 extended `transform_path_points.pointSelector` with `{ type: "nearest" }` selection over absolute path-node coordinates. It keeps legacy explicit, bbox, and segment range selectors valid, selects exactly one editable `end`/`c1`/`c2` point by squared Euclidean distance with path-order tie-breaks, supports optional `maxDistance`, rejects no-candidate or out-of-threshold selectors before snapshot/write, and reuses the existing transform, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
+- Phase 1 loop 24 extended `transform_path_points.pointSelector` with `{ type: "radius" }` selection over absolute path-node coordinates. It keeps legacy explicit, bbox, segment range, and nearest selectors valid, selects every editable `end`/`c1`/`c2` point within an inclusive circular distance in path order, rejects invalid or empty radius selections before snapshot/write, and reuses the existing transform, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 
 ### 4. Validation & Error Matrix
 
@@ -1338,6 +1339,102 @@ await transformPathPoints({
 ```
 
 Use nearest selection when the caller knows an approximate absolute SVG coordinate and wants one editable path point. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
+
+## Scenario: Path Point Radius Selector Contract
+
+### 1. Scope / Trigger
+
+- Trigger: selecting all editable endpoint/control handles within a circular absolute-coordinate area before applying `transform_path_points`.
+- Scope: one existing path element in one workspace document, using the existing `translate`, `set_absolute`, and `set_relative` transform variants.
+- Out of scope: cross-path radius selection, ellipse/polygon/lasso selection, renderer hit testing, stroke-outline distance, curve projection distance, GUI node selection, selection previews, segment creation/deletion, and unsupported SVG path commands.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- Legacy explicit selector: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- Existing bbox selector: `{ type: "bbox", minX: number, minY: number, maxX: number, maxY: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- Existing segment range selector: `{ type: "segment_range", startSegmentIndex: number, endSegmentIndex: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- Existing nearest selector: `{ type: "nearest", x: number, y: number, pointTypes?: Array<"end" | "c1" | "c2">, maxDistance?: number }`
+- Radius selector: `{ type: "radius", x: number, y: number, radius: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- `x`, `y`, and `radius` are absolute SVG user-unit values.
+- `pointTypes` defaults to `["end", "c1", "c2"]`.
+- Response includes resolved `selectedPointCount`, `selectedPoints`, `editedSegments`, `transform`, and `changed.d.from` / `changed.d.to`.
+
+### 3. Contracts
+
+- Radius selection is computed from absolute editable path-node coordinates produced by the same parser used by `query_path_nodes({ normalize: "absolute" })`.
+- A point matches when `(point.x - x) ** 2 + (point.y - y) ** 2 <= radius ** 2`; the boundary is inclusive.
+- The selector resolves editable points exposed by the current path parser: `end`, `c1`, and `c2` on supported `M`, `L`, `C`, `Q`, and `Z` path commands, including relative variants.
+- Selected points are returned in deterministic path order, and within each segment the existing parser `availablePoints` order wins.
+- Legacy `{ points }`, `{ type: "bbox" }`, `{ type: "segment_range" }`, and `{ type: "nearest" }` callers remain valid.
+- After radius resolution, transform behavior is identical to explicit multi-point selection. `set_absolute` and `set_relative` target counts must match the resolved selected point count.
+- A radius selector with no candidates for the requested `pointTypes` fails before snapshot/write.
+- Successful writes preserve the target path element id and object tree, snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+- Failed validation, missing path data, unsupported commands, empty radius matches, or set-target mismatches leave `current.svg`, history, operation logs, operation-diff artifacts, and Inkscape refresh untouched.
+
+### 4. Validation & Error Matrix
+
+- Non-finite `x`, `y`, or `radius` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Negative `radius` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Empty `pointTypes` -> schema validation failure, no pre-pull or write.
+- No editable candidate after `pointTypes` filtering and radius matching -> `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- `set_absolute` or `set_relative` target count mismatch after radius resolution -> `INVALID_INPUT`, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: move all control handles within 8 user units of `{ x: 118, y: 34 }` while leaving farther endpoints untouched.
+- Good: set exact coordinates for all endpoints inside a small circular region after querying absolute path nodes.
+- Good: use `radius: 0` to select points exactly at a coordinate when exact equality is intended.
+- Base: caller needs one closest point; use the nearest selector.
+- Base: caller needs a rectangular area; use the bbox selector.
+- Bad: using current Inkscape GUI node selection to decide which points are in the radius.
+- Bad: using rendered curve distance and pretending it selected editable path nodes.
+- Bad: replacing the whole SVG document because a local cluster of handles needs movement.
+
+### 6. Tests Required
+
+- Schema tests accept legacy explicit, bbox, segment range, nearest, and radius selectors with defaulted `pointTypes`.
+- Schema tests reject non-finite radius coordinates, empty `pointTypes`, and negative or non-finite `radius`.
+- Core tests prove radius selection uses absolute coordinates, includes boundary points, honors `pointTypes`, preserves path order, and returns resolved `selectedPoints`.
+- Core tests prove radius `set_absolute` and `set_relative` reject target-count mismatches after selector resolution.
+- Core tests prove empty radius selectors throw before returning a mutated SVG.
+- Tool-level tests prove successful radius transforms snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests prove invalid radius selectors leave `current.svg` and history unchanged and do not call Inkscape sync/refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: getCurrentGuiNodeSelection(),
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: {
+    type: "radius",
+    x: 118,
+    y: 34,
+    radius: 8,
+    pointTypes: ["c1", "c2"],
+  },
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+Use radius selection when the caller knows an approximate absolute SVG coordinate and wants a local group of editable path points. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
 ## Phase Summary
 

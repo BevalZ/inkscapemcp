@@ -132,6 +132,13 @@ export type PathPointSelector =
       y: number;
       pointTypes?: EditablePathPoint[];
       maxDistance?: number;
+    }
+  | {
+      type: "radius";
+      x: number;
+      y: number;
+      radius: number;
+      pointTypes?: EditablePathPoint[];
     };
 
 export interface TransformPathPointsResult extends PathDataEditResult {
@@ -611,6 +618,8 @@ function validateTransformPathPointsInput(input: {
     validatePathPointSegmentRangeSelector(input.pointSelector);
   } else if (input.pointSelector.type === "nearest") {
     validatePathPointNearestSelector(input.pointSelector);
+  } else if (input.pointSelector.type === "radius") {
+    validatePathPointRadiusSelector(input.pointSelector);
   } else {
     validateExplicitPathPointSelector(input.pointSelector);
   }
@@ -724,6 +733,21 @@ function validatePathPointNearestSelector(selector: Extract<PathPointSelector, {
   }
 }
 
+function validatePathPointRadiusSelector(selector: Extract<PathPointSelector, { type: "radius" }>): void {
+  if (!Number.isFinite(selector.x) || !Number.isFinite(selector.y) || !Number.isFinite(selector.radius)) {
+    throw new InkMcpError("INVALID_INPUT", "Path point radius selector coordinates and radius must be finite.", {
+      x: selector.x,
+      y: selector.y,
+      radius: selector.radius,
+    });
+  }
+  if (selector.radius < 0) {
+    throw new InkMcpError("INVALID_INPUT", "Path point radius selector radius must be non-negative.", {
+      radius: selector.radius,
+    });
+  }
+}
+
 function resolvePathPointSelector(pathData: string, selector: PathPointSelector): PathPointSelection[] {
   const selected: PathPointSelection[] = [];
   const segments = describeEditablePathData(pathData);
@@ -818,6 +842,31 @@ function resolvePathPointSelector(pathData: string, selector: PathPointSelector)
       });
     }
     return [nearest.selection];
+  }
+
+  if (selector.type === "radius") {
+    const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+    const radiusSquared = selector.radius ** 2;
+    for (const segment of segments) {
+      for (const point of segment.availablePoints) {
+        if (!allowedPointTypes.has(point)) continue;
+        const absolutePoint = segment.absolutePoints[point];
+        if (!absolutePoint) continue;
+        const distanceSquared = (absolutePoint.x - selector.x) ** 2 + (absolutePoint.y - selector.y) ** 2;
+        if (distanceSquared <= radiusSquared) {
+          selected.push({ segmentIndex: segment.index, point });
+        }
+      }
+    }
+    if (selected.length === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Path point radius selector matched no editable points.", {
+        x: selector.x,
+        y: selector.y,
+        radius: selector.radius,
+        pointTypes: [...allowedPointTypes],
+      });
+    }
+    return selected;
   }
 
   return selector.points;

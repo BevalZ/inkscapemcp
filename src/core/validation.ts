@@ -276,6 +276,14 @@ const pathPointNearestSelectorSchema = z.object({
   maxDistance: z.number().finite().nonnegative().optional(),
 });
 
+const pathPointRadiusSelectorSchema = z.object({
+  type: z.literal("radius"),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  radius: z.number().finite().nonnegative(),
+  pointTypes: z.array(z.enum(["end", "c1", "c2"])).min(1).default(["end", "c1", "c2"]),
+});
+
 export const transformPathPointsSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
@@ -283,6 +291,7 @@ export const transformPathPointsSchema = z.object({
     pathPointBboxSelectorSchema,
     pathPointSegmentRangeSelectorSchema,
     pathPointNearestSelectorSchema,
+    pathPointRadiusSelectorSchema,
     explicitPathPointSelectorSchema,
   ]),
   transform: z.discriminatedUnion("type", [
@@ -319,7 +328,8 @@ export const transformPathPointsSchema = z.object({
   if (
     input.pointSelector.type === "bbox" ||
     input.pointSelector.type === "segment_range" ||
-    input.pointSelector.type === "nearest"
+    input.pointSelector.type === "nearest" ||
+    input.pointSelector.type === "radius"
   ) return;
   if (input.transform.points.length !== input.pointSelector.points.length) {
     ctx.addIssue({
