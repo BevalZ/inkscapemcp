@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createSvgDocument } from "../src/core/svg-document.js";
-import { pathSegmentsToD, validatePathData } from "../src/core/path-data.js";
+import { pathSegmentsToD, summarizePathDataValidation, validatePathData } from "../src/core/path-data.js";
 import {
   appendPathSegmentInSvg,
   applyOperationsToSvg,
@@ -114,6 +114,67 @@ describe("SVG operations", () => {
     expect(() => validatePathData("M10 10 C20 5 30 5 40 10")).not.toThrow();
     expect(() => validatePathData("M10 10 C20 5 30")).toThrow("incomplete");
     expect(() => validatePathData("M10 10 X20 20")).toThrow("invalid");
+  });
+
+  it("summarizes valid path data with editable point counts", () => {
+    const result = summarizePathDataValidation("M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z");
+
+    expect(result).toMatchObject({
+      ok: true,
+      d: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z",
+      requireMoveTo: true,
+      segmentCount: 5,
+      commandCounts: { M: 1, l: 1, c: 1, q: 1, z: 1 },
+      unsupportedCommandCount: 0,
+      relativeCommandCount: 3,
+      absoluteCommandCount: 2,
+      availablePointCount: 7,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", relative: false, availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "l", relative: true, availablePoints: ["end"] },
+        { segmentIndex: 2, cmd: "c", relative: true, availablePoints: ["c1", "c2", "end"] },
+        { segmentIndex: 3, cmd: "q", relative: true, availablePoints: ["c1", "end"] },
+        { segmentIndex: 4, cmd: "z", relative: false, availablePoints: [] },
+      ],
+    });
+  });
+
+  it("summarizes append-style path data when move-to is not required", () => {
+    const result = summarizePathDataValidation("L10 10 C12 10 14 10 16 12", { requireMoveTo: false });
+
+    expect(result).toMatchObject({
+      ok: true,
+      d: "L10 10 C12 10 14 10 16 12",
+      requireMoveTo: false,
+      segmentCount: 2,
+      commandCounts: { L: 1, C: 1 },
+      unsupportedCommandCount: 0,
+      availablePointCount: 4,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "L", availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "C", availablePoints: ["c1", "c2", "end"] },
+      ],
+    });
+  });
+
+  it("returns typed validation failures for malformed or unsupported path data", () => {
+    expect(summarizePathDataValidation("M10 10 A5 5 0 0 1 20 20")).toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "edit_path_nodes supports only M, L, C, Q, and Z path commands.",
+        details: { command: "A" },
+      },
+    });
+
+    expect(summarizePathDataValidation("")).toMatchObject({
+      ok: false,
+      d: "",
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path data must not be empty.",
+      },
+    });
   });
 
   it("draws a new path from raw path data with a stable id", () => {

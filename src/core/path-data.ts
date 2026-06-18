@@ -1,4 +1,4 @@
-import { InkMcpError } from "./errors.js";
+import { InkMcpError, toErrorPayload } from "./errors.js";
 
 export type PathSegment =
   | { cmd: "M"; x: number; y: number }
@@ -56,6 +56,33 @@ interface PathDataValidationOptions {
 }
 
 type PathToken = { type: "command" | "number"; value: string };
+
+export interface PathDataValidationSummary {
+  ok: true;
+  d: string;
+  requireMoveTo: boolean;
+  segmentCount: number;
+  commandCounts: Record<string, number>;
+  unsupportedCommandCount: number;
+  relativeCommandCount: number;
+  absoluteCommandCount: number;
+  availablePointCount: number;
+  editablePointSummary: Array<{
+    segmentIndex: number;
+    cmd: EditablePathSegment["cmd"];
+    relative: boolean;
+    availablePoints: EditablePathPoint[];
+  }>;
+}
+
+export interface PathDataValidationFailure {
+  ok: false;
+  d: string;
+  requireMoveTo: boolean;
+  error: ReturnType<typeof toErrorPayload>;
+}
+
+export type PathDataValidationResult = PathDataValidationSummary | PathDataValidationFailure;
 
 const commandParamCounts: Record<string, number> = {
   M: 2,
@@ -324,6 +351,56 @@ export function isValidPathData(pathData: string, options: PathDataValidationOpt
   }
 }
 
+export function summarizePathDataValidation(
+  pathData: string,
+  options: PathDataValidationOptions = {},
+): PathDataValidationResult {
+  const d = pathData.trim();
+  const requireMoveTo = options.requireMoveTo !== false;
+  try {
+    validatePathData(d, { requireMoveTo });
+    const segments = describeEditablePathDataWithOptions(d, { requireMoveTo });
+    const commandCounts: Record<string, number> = {};
+    let relativeCommandCount = 0;
+    let absoluteCommandCount = 0;
+    let availablePointCount = 0;
+    const editablePointSummary = segments.map((segment) => {
+      commandCounts[segment.cmd] = (commandCounts[segment.cmd] ?? 0) + 1;
+      if (segment.relative) {
+        relativeCommandCount += 1;
+      } else {
+        absoluteCommandCount += 1;
+      }
+      availablePointCount += segment.availablePoints.length;
+      return {
+        segmentIndex: segment.index,
+        cmd: segment.cmd,
+        relative: segment.relative,
+        availablePoints: segment.availablePoints,
+      };
+    });
+    return {
+      ok: true,
+      d,
+      requireMoveTo,
+      segmentCount: segments.length,
+      commandCounts,
+      unsupportedCommandCount: 0,
+      relativeCommandCount,
+      absoluteCommandCount,
+      availablePointCount,
+      editablePointSummary,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      d,
+      requireMoveTo,
+      error: toErrorPayload(error),
+    };
+  }
+}
+
 function tokenizePathData(pathData: string): PathToken[] {
   const tokens: PathToken[] = [];
   pathTokenPattern.lastIndex = 0;
@@ -370,6 +447,21 @@ function assertEditablePathCommand(command: string): asserts command is Editable
       command,
     });
   }
+}
+
+function describeEditablePathDataWithOptions(
+  pathData: string,
+  options: PathDataValidationOptions,
+): EditablePathSegmentInfo[] {
+  const requireMoveTo = options.requireMoveTo !== false;
+  if (requireMoveTo) return describeEditablePathData(pathData);
+
+  const syntheticPath = `M0 0 ${pathData}`;
+  const segments = describeEditablePathData(syntheticPath);
+  return segments.slice(1).map((segment, index) => ({
+    ...segment,
+    index,
+  }));
 }
 
 function editableSegmentFromValues(command: string | undefined, values: number[]): EditablePathSegment {

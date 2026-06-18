@@ -7,6 +7,7 @@ import {
   queryPathNodesSchema,
   replacePathDataSchema,
   transformPathPointsSchema,
+  validatePathDataSchema,
 } from "../src/core/validation.js";
 
 describe("path tool validation", () => {
@@ -156,5 +157,22 @@ describe("path tool validation", () => {
         transform: { type: "translate" },
       }),
     ).toThrow("at least one axis");
+  });
+
+  it("accepts path data validation input without requiring docId", () => {
+    expect(validatePathDataSchema.parse({ d: "M1 1 L2 2" })).toEqual({
+      d: "M1 1 L2 2",
+      requireMoveTo: true,
+    });
+
+    expect(validatePathDataSchema.parse({ d: "L2 2", requireMoveTo: false })).toEqual({
+      d: "L2 2",
+      requireMoveTo: false,
+    });
+
+    expect(validatePathDataSchema.parse({ d: "" })).toEqual({
+      d: "",
+      requireMoveTo: true,
+    });
   });
 });

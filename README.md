@@ -181,6 +181,7 @@ Phase 1 document and preview tools:
 - `draw_path`
 - `replace_path_data`
 - `append_path_segment`
+- `validate_path_data`
 - `edit_path_nodes`
 - `transform_path_points`
 - `query_path_nodes`
@@ -240,6 +241,8 @@ For automatic GUI refresh, `update_element`, `nudge_path_element`, `replace_path
 ## Phase 2 Notes
 
 `draw_path`, `replace_path_data`, and `append_path_segment` accept either raw SVG `d` strings or structured segments. Structured segments currently support `M`, `L`, `C`, `Q`, and `Z`; raw `d` strings are validated for SVG path command/parameter shape before save.
+
+`validate_path_data` is a read-only preflight helper for raw SVG path `d` strings. It returns compact segment counts, command counts, unsupported-command count, relative/absolute command counts, and editable point summaries without requiring `docId`, reading workspace files, creating snapshots, writing logs, or refreshing Inkscape. Set `requireMoveTo: false` to validate append-style fragments such as `L10 10`.
 
 `edit_path_nodes` applies compact node-level edits to an existing path's `d` attribute. It can move endpoints/control points, insert structured segments, and delete segments. For safe round-tripping it supports paths made from `M`, `L`, `C`, `Q`, and `Z` commands; use `replace_path_data` for more complex SVG path commands such as arcs.
 

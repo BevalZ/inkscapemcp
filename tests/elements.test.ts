@@ -16,6 +16,7 @@ import {
   replacePathData,
   transformPathPoints,
   updateElement,
+  validatePathDataTool,
 } from "../src/tools/elements.js";
 
 describe("element tools", () => {
@@ -463,6 +464,43 @@ describe("element tools", () => {
         },
       ],
     });
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+  });
+
+  it("validates path data without workspace or Inkscape side effects", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+    const beforeSvg = await workspace.readSvg("sync-doc");
+
+    await expect(validatePathDataTool({ d: "M1 1 L2 2" })).resolves.toMatchObject({
+      toolName: "validate_path_data",
+      ok: true,
+      requireMoveTo: true,
+      segmentCount: 2,
+      commandCounts: { M: 1, L: 1 },
+      unsupportedCommandCount: 0,
+      availablePointCount: 2,
+    });
+
+    await expect(validatePathDataTool({ d: "L2 2", requireMoveTo: false })).resolves.toMatchObject({
+      ok: true,
+      requireMoveTo: false,
+      segmentCount: 1,
+      commandCounts: { L: 1 },
+      unsupportedCommandCount: 0,
+    });
+
+    await expect(validatePathDataTool({ d: "M1 1 A2 2 0 0 1 3 3", requireMoveTo: true })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        details: { command: "A" },
+      },
+    });
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.readSvg("sync-doc")).resolves.toBe(beforeSvg);
     await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
   });
 });

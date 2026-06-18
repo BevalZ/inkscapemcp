@@ -176,6 +176,11 @@ export const appendPathSegmentSchema = z.object({
   ...pathDataSourceSchema,
 }).refine(exactlyOnePathDataSource, "Provide exactly one path source: d or segments");
 
+export const validatePathDataSchema = z.object({
+  d: z.string(),
+  requireMoveTo: z.boolean().default(true),
+});
+
 const pathNodeEditSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("move_point"),

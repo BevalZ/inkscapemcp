@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/06-19-phase1-path-data-validation-summary/prd.md", "reason": "Task requirements and acceptance criteria for the read-only path data validation summary slice."}
+{"file": "docs/inkscape-mcp-plan.md", "reason": "Project runtime, SVG path, and read/write boundary context."}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality check entry point."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required schema, core helper, and test patterns."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Expected typed error payload behavior for validation failures."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 path editing and query contracts to extend."}

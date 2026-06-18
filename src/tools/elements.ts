@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 
+import { summarizePathDataValidation } from "../core/path-data.js";
 import {
   addElementToSvg,
   appendPathSegmentInSvg,
@@ -29,6 +30,7 @@ import {
   replacePathDataSchema,
   transformPathPointsSchema,
   updateElementSchema,
+  validatePathDataSchema,
 } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import {
@@ -229,6 +231,13 @@ export async function appendPathSegment(input: z.infer<typeof appendPathSegmentS
     elementId: input.elementId,
     changed: { d: { from: write.result.previousD, to: write.result.nextD } },
   }, write), refresh);
+}
+
+export async function validatePathDataTool(input: z.infer<typeof validatePathDataSchema>) {
+  return {
+    toolName: "validate_path_data",
+    ...summarizePathDataValidation(input.d, { requireMoveTo: input.requireMoveTo }),
+  };
 }
 
 export async function editPathNodes(input: z.infer<typeof editPathNodesSchema>, ctx: ToolContext) {

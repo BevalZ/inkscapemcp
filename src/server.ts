@@ -54,6 +54,7 @@ import {
   stopGuiSyncPollingSchema,
   transformPathPointsSchema,
   updateElementSchema,
+  validatePathDataSchema,
   vectorizeBitmapSchema,
 } from "./core/validation.js";
 import { toErrorPayload } from "./core/errors.js";
@@ -91,6 +92,7 @@ import {
   replacePathData,
   transformPathPoints,
   updateElement,
+  validatePathDataTool,
 } from "./tools/elements.js";
 import {
   diagnoseInkscapeGui,
@@ -305,6 +307,17 @@ export function createServer() {
       inputSchema: appendPathSegmentSchema,
     },
     (input) => runTool("append_path_segment", () => appendPathSegment(input, ctx)),
+  );
+
+  server.registerTool(
+    "validate_path_data",
+    {
+      title: "Validate path data",
+      description:
+        "Validate raw SVG path data and return a compact read-only segment and editable-point summary.",
+      inputSchema: validatePathDataSchema,
+    },
+    (input) => runTool("validate_path_data", () => validatePathDataTool(input)),
   );
 
   server.registerTool(

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Quality gate requires no workspace side effects for read-only tools and tests for changed behavior."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check schema coverage, pure core behavior, and MCP handler registration."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check malformed path data is returned as explicit typed error payloads."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Check new read-only path validation contract is captured as Phase 1 loop 18."}

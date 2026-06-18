@@ -101,6 +101,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 15 established `query_path_nodes({ normalize: "absolute" })` as an explicit read-only normalized path-node view. The default remains `normalize: "none"` for compatibility; absolute mode adds normalized segment point data derived from the existing path parser without rewriting SVG or changing edit semantics. Future document-wide normalized path summaries and edit-side normalization should reuse this contract.
 - Phase 1 loop 16 established `query_document({ includePathNodes: true, pathNodeNormalize: "absolute" })` as the document-wide counterpart to the single-path normalized query. The default remains `pathNodeNormalize: "none"`; absolute mode adds token-conscious compact normalized summaries and full normalized segment point details without mutating SVG or changing unsupported-path warning behavior.
 - Phase 1 loop 17 established `transform_path_points` as the first bounded transform-side path editing primitive. It translates explicit `end`/`c1`/`c2` selections on one existing path, rejects empty, duplicate, non-finite, zero, unavailable, or out-of-range point edits before writing, snapshots only after validation succeeds, logs and writes operation diagnostics, and uses direct active-window `d` attribute sync.
+- Phase 1 loop 18 established `validate_path_data` as a read-only raw path preflight surface. It validates one `d` string without `docId`, returns compact command/segment/editable-point summaries on success, returns typed `ok: false` validation errors on malformed or unsupported path data, supports append-style validation with `requireMoveTo: false`, and must not touch workspace files, snapshots, logs, metadata, GUI sync, or Inkscape.
 
 ### 4. Validation & Error Matrix
 
@@ -786,6 +787,82 @@ await transformPathPoints({
 ```
 
 Use the transform tool for explicit point movement so bidirectional pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
+
+## Scenario: Path Data Validation Summary Contract
+
+### 1. Scope / Trigger
+
+- Trigger: preflighting raw SVG path data before calling path write tools or generating path edit plans.
+- Scope: `validate_path_data` for one raw `d` string.
+- Out of scope: reading workspace path elements, rewriting path data, repair suggestions, persisted reports, arc editing support, and renderer-backed geometry validation.
+
+### 2. Signatures
+
+- Tool: `validate_path_data({ d, requireMoveTo? })`
+- `d`: raw SVG path data string.
+- `requireMoveTo`: boolean, default `true`.
+- Success response: `ok: true`, `d`, `requireMoveTo`, `segmentCount`, `commandCounts`, `unsupportedCommandCount`, `relativeCommandCount`, `absoluteCommandCount`, `availablePointCount`, and `editablePointSummary`.
+- Failure response: `ok: false`, `d`, `requireMoveTo`, and typed `error` payload.
+
+### 3. Contracts
+
+- The tool is read-only and does not require `docId`.
+- The tool must not read workspace files, write workspace files, snapshot, update metadata, append operation logs, pre-pull GUI state, update connection baselines, or refresh Inkscape.
+- Validation reuses the existing path parser and editable path boundary.
+- Successful summaries support only editable `M`, `L`, `C`, `Q`, and `Z` path commands, including relative variants.
+- `requireMoveTo: true` validates complete path data and requires the first command to be `M` or `m`.
+- `requireMoveTo: false` validates append-style fragments by allowing non-move first commands while keeping the same editable-command boundary for summaries.
+- Expected validation failures return normal structured `ok: false` payloads from the tool handler, not thrown MCP-level errors.
+- Future path linting, arc support, normalization, or repair suggestions may extend the response shape, but must preserve the no-side-effect contract.
+
+### 4. Validation & Error Matrix
+
+- Empty `d` -> `ok: false`, `INVALID_INPUT`, no side effects.
+- Invalid characters or trailing garbage -> `ok: false`, `INVALID_INPUT`, no side effects.
+- Incomplete parameter set -> `ok: false`, `INVALID_INPUT` with command detail when available.
+- `requireMoveTo: true` and first command is not `M` or `m` -> `ok: false`, `INVALID_INPUT`.
+- Unsupported editable command such as `A`, `S`, `T`, `H`, or `V` -> `ok: false`, `INVALID_INPUT` with `details.command`.
+- Invalid `requireMoveTo` type -> schema validation failure before handler execution.
+
+### 5. Good/Base/Bad Cases
+
+- Good: validate `M10 10 l5 1 c2 3 4 5 6 7` and receive compact command counts, zero unsupported-command count, plus editable point names for each segment.
+- Good: validate `L10 10 C12 10 14 10 16 12` with `requireMoveTo: false` before `append_path_segment`.
+- Base: path data includes an arc; return a typed unsupported-command failure until a later arc PRD expands the parser.
+- Bad: validating a path by inserting it into a hidden workspace document.
+- Bad: returning success for unsupported commands just because SVG syntax is parseable.
+
+### 6. Tests Required
+
+- Schema tests prove `d` is accepted without `docId`, `requireMoveTo` defaults to `true`, and empty strings reach the handler.
+- Core tests prove complete and append-style path summaries include segment counts, command counts, relative/absolute counts, and editable point summaries.
+- Core tests prove malformed and unsupported path data return typed `ok: false` results.
+- Tool-level tests prove validation does not read/write workspace state, create history snapshots, call active-window attribute sync, or call companion refresh.
+- Existing path write/edit/query tests remain green.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await drawPath({
+  docId: "scratch",
+  elementId: "probe",
+  d: candidatePath,
+  attributes: { fill: "none" },
+});
+```
+
+#### Correct
+
+```typescript
+const result = await validatePathDataTool({
+  d: candidatePath,
+  requireMoveTo: true,
+});
+```
+
+Use the validation tool for preflight so path generation feedback stays cheap, deterministic, and free of workspace or GUI side effects.
 
 ## Phase Summary
 
