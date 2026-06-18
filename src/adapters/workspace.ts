@@ -117,6 +117,15 @@ export interface GuiPullManifest {
   svgPath?: string;
 }
 
+export interface CheckpointSnapshot {
+  paths: DocumentPaths;
+  checkpointId: string;
+  snapshotId: string;
+  snapshotPath: string;
+  svg: string;
+  metadata: StoredMetadata;
+}
+
 type WriteCallback<T> = (paths: DocumentPaths) => Promise<T>;
 
 export class Workspace {
@@ -333,6 +342,20 @@ export class Workspace {
       await this.touchMetadata(paths, next.svg, "mcp");
       const operationDiff = await this.createOperationDiffArtifact(paths, toolName, currentSvg, next.svg);
       return { paths, snapshotPath, result: next.result, ...operationDiff };
+    });
+  }
+
+  async createCheckpointSnapshot(
+    docId: string,
+    input: { label?: string },
+  ): Promise<CheckpointSnapshot> {
+    return this.withDocumentWriteLock(docId, async (paths) => {
+      await this.assertDocumentExists(paths);
+      const currentSvg = await readFile(paths.currentSvg, "utf8");
+      const metadata = await this.readMetadata(docId);
+      const snapshotPath = await this.createSnapshot(paths, checkpointToolName(input.label), currentSvg);
+      const snapshotId = path.basename(snapshotPath, ".svg");
+      return { paths, checkpointId: snapshotId, snapshotId, snapshotPath, svg: currentSvg, metadata };
     });
   }
 
@@ -739,6 +762,17 @@ export class Workspace {
 export function timestampId(date = new Date()): string {
   const stamp = date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   return `${stamp}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function checkpointToolName(label?: string): string {
+  if (!label) return "create_checkpoint";
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug ? `create_checkpoint-${slug}` : "create_checkpoint";
 }
 
 function assertSafeConnectionId(connectionId: string): string {

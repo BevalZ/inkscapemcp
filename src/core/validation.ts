@@ -39,6 +39,12 @@ export const createDocumentSchema = z.object({
   background: z.string().optional(),
 });
 
+export const createCheckpointSchema = z.object({
+  docId: docIdSchema,
+  label: z.string().trim().min(1).max(80).optional(),
+  description: z.string().trim().min(1).max(500).optional(),
+});
+
 const syncModeSchema = z.enum(["display_only", "bidirectional"]);
 const connectionIdSchema = z.string().regex(/^conn-[A-Za-z0-9_-]{8,80}$/);
 

@@ -20,6 +20,7 @@ import { findSemanticElementMatches, fingerprintSvgElements } from "../core/sema
 import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
+  createCheckpointSchema,
   createDocumentSchema,
   diffDocumentSnapshotsSchema,
   importSvgDocumentSchema,
@@ -62,6 +63,32 @@ export async function createDocument(input: z.infer<typeof createDocumentSchema>
     ok: true,
     document: summarizeDocument(parseSvgDocument(svg), paths.currentSvg, docId, title),
     paths,
+  };
+}
+
+export async function createCheckpoint(input: z.infer<typeof createCheckpointSchema>, ctx: ToolContext) {
+  const checkpoint = await ctx.workspace.createCheckpointSnapshot(input.docId, { label: input.label });
+  const document = parseSvgDocument(checkpoint.svg);
+  await appendOperationLog(checkpoint.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "create_checkpoint",
+    inputSummary: {
+      label: input.label,
+      hasDescription: input.description !== undefined,
+    },
+    snapshotPath: checkpoint.snapshotPath,
+    status: "ok",
+  });
+  return {
+    ok: true,
+    docId: input.docId,
+    checkpointId: checkpoint.checkpointId,
+    snapshotId: checkpoint.snapshotId,
+    snapshotPath: checkpoint.snapshotPath,
+    ...(input.label ? { label: input.label } : {}),
+    ...(input.description ? { description: input.description } : {}),
+    document: summarizeDocument(document, checkpoint.paths.currentSvg, input.docId, checkpoint.metadata.title),
   };
 }
 

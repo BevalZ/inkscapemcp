@@ -10,6 +10,7 @@ import {
   applySvgOperationsSchema,
   archiveDocumentSchema,
   connectInkscapeWindowSchema,
+  createCheckpointSchema,
   createDocumentSchema,
   deleteElementSchema,
   diffDocumentSnapshotsSchema,
@@ -48,6 +49,7 @@ import { toErrorPayload } from "./core/errors.js";
 import { createToolContext, jsonResult, runTool } from "./tools/context.js";
 import {
   archiveDocument,
+  createCheckpoint,
   createDocument,
   diffDocumentSnapshots,
   importSvgDocument,
@@ -177,6 +179,17 @@ export function createServer() {
       inputSchema: importSvgDocumentSchema,
     },
     (input) => runTool("import_svg_document", () => importSvgDocument(input, ctx)),
+  );
+
+  server.registerTool(
+    "create_checkpoint",
+    {
+      title: "Create document checkpoint",
+      description:
+        "Create a named history snapshot of the current SVG without changing current.svg or refreshing Inkscape.",
+      inputSchema: createCheckpointSchema,
+    },
+    (input) => runTool("create_checkpoint", () => createCheckpoint(input, ctx)),
   );
 
   server.registerTool(

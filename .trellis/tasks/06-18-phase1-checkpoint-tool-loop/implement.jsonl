@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for document lifecycle tool changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for workspace, validation, server registration, and document tools."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Explicit error semantics for checkpoint creation failures."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Snapshot, workspace confinement, schema, and test requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Operation log boundaries for checkpoint entries without raw SVG."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Filesystem persistence and history snapshot conventions."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 recovery/replay contracts."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide routing."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Required because checkpoint should reuse history/snapshot helpers."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Required because changes span schema, workspace, server tool registration, docs, and tests."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 source for operation diff, replay, and recovery workstream."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Debug hardening loop source for recovery and replay foundation."}
