@@ -451,3 +451,36 @@ Implemented preview_svg_operations as a read-only dry-run surface for controlled
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Phase 1 Operation Replay Loop
+
+**Date**: 2026-06-19
+**Task**: Phase 1 Operation Replay Loop
+**Branch**: `main`
+
+### Summary
+
+Implemented replay_operations for deterministic controlled operation replay. Write mode requires an explicit revision/contentHash baseline, pre-pulls bidirectional GUI state before comparing that baseline, rejects stale baselines before snapshot/write, rejects generated-id add operations, snapshots and writes operation diff diagnostics on success, logs a compact summary, and refreshes through the same attribute-sync or companion-extension path as apply_svg_operations. Dry-run mode reuses the preview/diff envelope without workspace writes and supports stale-read warnings. Verified npm run typecheck, npm test, npm run build, python inkscape-extension/inksmcp_pull.py --self-test, and git diff --check. Remaining Phase 1 follow-ups include saved dry-run preview artifacts, operation groups/checkpoint association, id repair proposal/apply, and stronger merge/path-edit reliability.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bda09ad` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
