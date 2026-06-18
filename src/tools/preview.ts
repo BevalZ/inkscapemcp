@@ -238,13 +238,27 @@ export async function refreshInInkscape(input: z.infer<typeof refreshInInkscapeS
 
 export async function diagnoseInkscapeGui(input: z.infer<typeof diagnoseInkscapeGuiSchema>, ctx: ToolContext) {
   const diagnostics = await ctx.inkscape.diagnoseGui({ timeoutMs: input.timeoutMs });
-  const companionReady = Boolean(diagnostics.binaryAvailable && diagnostics.companionExtensionInstalled);
-  const bidirectionalReady = Boolean(companionReady && diagnostics.pushExtensionInstalled);
-  const remediation = diagnosticRemediation(diagnostics);
+  const workspaceRootCheck = extensionWorkspaceRootCheck(diagnostics, ctx.workspace.paths.root);
+  const diagnosticWarnings = [...diagnostics.warnings, ...(workspaceRootCheck.warning ? [workspaceRootCheck.warning] : [])];
+  const enrichedDiagnostics = {
+    ...diagnostics,
+    warnings: diagnosticWarnings,
+  };
+  const companionReady = Boolean(
+    diagnostics.binaryAvailable &&
+      (diagnostics.extensionSelfCheck?.capabilities.sameWindowRefresh ?? diagnostics.companionExtensionInstalled) &&
+      workspaceRootCheck.ready,
+  );
+  const bidirectionalReady = Boolean(
+    companionReady &&
+      (diagnostics.extensionSelfCheck?.capabilities.bidirectionalGuiPull ?? diagnostics.pushExtensionInstalled),
+  );
+  const remediation = diagnosticRemediation(enrichedDiagnostics, workspaceRootCheck);
   return {
     ok: true,
     ...(input.docId ? { docId: input.docId } : {}),
-    diagnostics,
+    diagnostics: enrichedDiagnostics,
+    workspaceRootCheck,
     capabilityReadiness: {
       sameWindowRefresh: companionReady ? "ready" : "not_ready",
       bidirectionalGuiPull: bidirectionalReady ? "ready" : "not_ready",
@@ -261,6 +275,7 @@ export async function diagnoseInkscapeGui(input: z.infer<typeof diagnoseInkscape
 
 function diagnosticRemediation(
   diagnostics: Awaited<ReturnType<ToolContext["inkscape"]["diagnoseGui"]>>,
+  workspaceRootCheck?: ReturnType<typeof extensionWorkspaceRootCheck>,
 ): Array<{ code: string; message: string }> {
   const steps: Array<{ code: string; message: string }> = [];
   if (!diagnostics.binaryAvailable) {
@@ -276,7 +291,29 @@ function diagnosticRemediation(
       message: "Run npm run install:inkscape-extension, then restart Inkscape so extension actions are loaded.",
     });
   }
-  if (diagnostics.companionExtensionInstalled && diagnostics.pushExtensionInstalled) {
+  if (diagnostics.extensionSelfCheck?.pullAction.ok === false || diagnostics.extensionSelfCheck?.pushAction.ok === false) {
+    steps.push({
+      code: "REINSTALL_COMPANION_EXTENSION",
+      message: "Re-run npm run install:inkscape-extension so the installed .inx action declarations match this MCP server.",
+    });
+  }
+  if (diagnostics.extensionSelfCheck?.config.ok === false) {
+    steps.push({
+      code: "REGENERATE_EXTENSION_CONFIG",
+      message: "Re-run npm run install:inkscape-extension -- --workspace <workspace-root> to regenerate inksmcp-extension.json.",
+    });
+  }
+  if (workspaceRootCheck?.status === "mismatch") {
+    steps.push({
+      code: "REINSTALL_WITH_CURRENT_WORKSPACE",
+      message: "Run npm run install:inkscape-extension -- --workspace <current MCP workspace>, then restart Inkscape.",
+    });
+  }
+  if (
+    diagnostics.companionExtensionInstalled &&
+    diagnostics.pushExtensionInstalled &&
+    (workspaceRootCheck?.ready ?? true)
+  ) {
     steps.push({
       code: "OPEN_WORKSPACE_CURRENT_SVG",
       message: "Open workspace/drawings/{docId}/current.svg in Inkscape before relying on automatic same-window refresh or bidirectional sync.",
@@ -287,4 +324,85 @@ function diagnosticRemediation(
     message: "Keep file-rebase disabled by default; use companion extension refresh or active-window attribute sync instead.",
   });
   return steps;
+}
+
+function extensionWorkspaceRootCheck(
+  diagnostics: Awaited<ReturnType<ToolContext["inkscape"]["diagnoseGui"]>>,
+  expectedWorkspaceRoot: string,
+):
+  | {
+      status: "not_checked";
+      ready: boolean;
+      expectedWorkspaceRoot: string;
+      reason: string;
+      warning?: undefined;
+    }
+  | {
+      status: "missing";
+      ready: false;
+      expectedWorkspaceRoot: string;
+      configPath?: string;
+      warning: { code: string; message: string; details?: Record<string, unknown> };
+    }
+  | {
+      status: "mismatch";
+      ready: false;
+      expectedWorkspaceRoot: string;
+      configuredWorkspaceRoot: string;
+      configPath?: string;
+      warning: { code: string; message: string; details?: Record<string, unknown> };
+    }
+  | {
+      status: "match";
+      ready: true;
+      expectedWorkspaceRoot: string;
+      configuredWorkspaceRoot: string;
+      configPath?: string;
+      warning?: undefined;
+    } {
+  const expected = path.resolve(expectedWorkspaceRoot);
+  const config = diagnostics.extensionSelfCheck?.config;
+  if (!diagnostics.binaryAvailable || !diagnostics.extensionSelfCheck) {
+    return {
+      status: "not_checked",
+      ready: false,
+      expectedWorkspaceRoot: expected,
+      reason: diagnostics.binaryAvailable ? "extension_self_check_unavailable" : "inkscape_unavailable",
+    };
+  }
+  if (!config?.workspaceRoot) {
+    return {
+      status: "missing",
+      ready: false,
+      expectedWorkspaceRoot: expected,
+      configPath: config?.path,
+      warning: {
+        code: "INKSMCP_WORKSPACE_ROOT_MISSING",
+        message: "InkSMCP extension config does not declare a workspaceRoot.",
+        details: { expectedWorkspaceRoot: expected, configPath: config?.path },
+      },
+    };
+  }
+  const actual = path.resolve(config.workspaceRoot);
+  if (actual !== expected) {
+    return {
+      status: "mismatch",
+      ready: false,
+      expectedWorkspaceRoot: expected,
+      configuredWorkspaceRoot: actual,
+      configPath: config.path,
+      warning: {
+        code: "INKSMCP_WORKSPACE_ROOT_MISMATCH",
+        message: "InkSMCP extension config points at a different workspace root than this MCP server.",
+        details: { expectedWorkspaceRoot: expected, configuredWorkspaceRoot: actual, configPath: config.path },
+      },
+    };
+  }
+  return {
+    status: "match",
+    ready: true,
+    expectedWorkspaceRoot: expected,
+    configuredWorkspaceRoot: actual,
+    configPath: config.path,
+  };
 }

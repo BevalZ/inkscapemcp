@@ -1,6 +1,8 @@
 import { access, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { DOMParser } from "@xmldom/xmldom";
+import type { Document as XmlDocument, Element as XmlElement } from "@xmldom/xmldom";
 
 import { InkMcpError } from "../core/errors.js";
 
@@ -65,13 +67,67 @@ export interface InkscapeGuiDiagnostics {
   extensionDirectory?: string;
   companionExtensionInstalled?: boolean;
   pushExtensionInstalled?: boolean;
+  extensionSelfCheck?: CompanionExtensionSelfCheck;
   warnings: Array<{ code: string; message: string; details?: Record<string, unknown> }>;
+}
+
+export interface CompanionExtensionSelfCheck {
+  extensionDirectory: string;
+  files: Record<CompanionExtensionFileName, CompanionExtensionFileStatus>;
+  pullAction: CompanionInxActionCheck;
+  pushAction: CompanionInxActionCheck;
+  config: CompanionExtensionConfigCheck;
+  capabilities: {
+    sameWindowRefresh: boolean;
+    bidirectionalGuiPull: boolean;
+    configWorkspaceRoot: boolean;
+  };
+}
+
+export type CompanionExtensionFileName =
+  | "inksmcp_pull.inx"
+  | "inksmcp_push_gui_state.inx"
+  | "inksmcp_pull.py"
+  | "inksmcp-extension.json";
+
+export interface CompanionExtensionFileStatus {
+  path: string;
+  exists: boolean;
+}
+
+export interface CompanionInxActionCheck {
+  file: "inksmcp_pull.inx" | "inksmcp_push_gui_state.inx";
+  path: string;
+  exists: boolean;
+  ok: boolean;
+  expectedExtensionId: string;
+  expectedActionId: string;
+  extensionId?: string;
+  actionId?: string;
+  expectedActionParam: "pull" | "push";
+  actionParam?: string;
+  actionParamHidden: boolean;
+  commandDeclared: boolean;
+  issues: Array<{ code: string; message: string; details?: Record<string, unknown> }>;
+}
+
+export interface CompanionExtensionConfigCheck {
+  path: string;
+  exists: boolean;
+  ok: boolean;
+  workspaceRoot?: string;
+  issues: Array<{ code: string; message: string; details?: Record<string, unknown> }>;
 }
 
 export const companionRefreshAction = "dev.hydens.inksmcp.pull-workspace-document.noprefs";
 export const companionPushGuiStateAction = "dev.hydens.inksmcp.push-gui-state.noprefs";
 export const unsafeActiveWindowRefreshEnv = "INKSMCP_ENABLE_UNSAFE_ACTIVE_WINDOW_REFRESH";
 const companionConfigFile = "inksmcp-extension.json";
+const companionPullInxFile = "inksmcp_pull.inx";
+const companionPushInxFile = "inksmcp_push_gui_state.inx";
+const companionScriptFile = "inksmcp_pull.py";
+const companionPullExtensionId = "dev.hydens.inksmcp.pull_workspace_document";
+const companionPushExtensionId = "dev.hydens.inksmcp.push_gui_state";
 
 export class InkscapeCli {
   private binaryPath?: string | null;
@@ -208,17 +264,22 @@ export class InkscapeCli {
     let extensionDirectory: string | undefined;
     let companionExtensionInstalled = false;
     let pushExtensionInstalled = false;
+    let extensionSelfCheck: CompanionExtensionSelfCheck | undefined;
     try {
       userDataDirectory = await this.userDataDirectoryWithTimeout(options.timeoutMs);
       extensionDirectory = path.join(userDataDirectory, "extensions");
-      companionExtensionInstalled = await fileExists(path.join(extensionDirectory, "inksmcp_pull.inx"));
-      pushExtensionInstalled = await fileExists(path.join(extensionDirectory, "inksmcp_push_gui_state.inx"));
+      extensionSelfCheck = await inspectCompanionExtension(extensionDirectory);
+      companionExtensionInstalled = extensionSelfCheck.files[companionPullInxFile].exists;
+      pushExtensionInstalled = extensionSelfCheck.files[companionPushInxFile].exists;
       if (!companionExtensionInstalled || !pushExtensionInstalled) {
         warnings.push({
           code: "INKSMCP_EXTENSION_MISSING",
           message: "InkSMCP companion extension files were not found in the Inkscape user extensions directory.",
           details: { extensionDirectory },
         });
+      }
+      for (const warning of companionExtensionWarnings(extensionSelfCheck)) {
+        warnings.push(warning);
       }
     } catch (error) {
       warnings.push({
@@ -240,6 +301,7 @@ export class InkscapeCli {
       extensionDirectory,
       companionExtensionInstalled,
       pushExtensionInstalled,
+      extensionSelfCheck,
       warnings,
     };
   }
@@ -361,7 +423,7 @@ export class InkscapeCli {
     return this.userDataDirectoryWithTimeout(15_000);
   }
 
-  private async userDataDirectoryWithTimeout(timeoutMs?: number): Promise<string> {
+  protected async userDataDirectoryWithTimeout(timeoutMs?: number): Promise<string> {
     const result = await this.run(["--user-data-directory"], { timeoutMs: timeoutMs ?? 15_000 });
     const directory = result.stdout.trim().split(/\r?\n/)[0]?.trim();
     if (!directory) {
@@ -453,6 +515,265 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function inspectCompanionExtension(extensionDirectory: string): Promise<CompanionExtensionSelfCheck> {
+  const files = {
+    [companionPullInxFile]: await companionFileStatus(extensionDirectory, companionPullInxFile),
+    [companionPushInxFile]: await companionFileStatus(extensionDirectory, companionPushInxFile),
+    [companionScriptFile]: await companionFileStatus(extensionDirectory, companionScriptFile),
+    [companionConfigFile]: await companionFileStatus(extensionDirectory, companionConfigFile),
+  };
+  const pullAction = await inspectCompanionInx(
+    files[companionPullInxFile].path,
+    companionPullInxFile,
+    companionPullExtensionId,
+    companionRefreshAction,
+    "pull",
+  );
+  const pushAction = await inspectCompanionInx(
+    files[companionPushInxFile].path,
+    companionPushInxFile,
+    companionPushExtensionId,
+    companionPushGuiStateAction,
+    "push",
+  );
+  const config = await inspectCompanionConfig(files[companionConfigFile].path);
+  return {
+    extensionDirectory,
+    files,
+    pullAction,
+    pushAction,
+    config,
+    capabilities: {
+      sameWindowRefresh: Boolean(files[companionScriptFile].exists && pullAction.ok && config.ok),
+      bidirectionalGuiPull: Boolean(files[companionScriptFile].exists && pullAction.ok && pushAction.ok && config.ok),
+      configWorkspaceRoot: Boolean(config.workspaceRoot),
+    },
+  };
+}
+
+async function companionFileStatus(
+  extensionDirectory: string,
+  fileName: CompanionExtensionFileName,
+): Promise<CompanionExtensionFileStatus> {
+  const filePath = path.join(extensionDirectory, fileName);
+  return { path: filePath, exists: await fileExists(filePath) };
+}
+
+async function inspectCompanionInx(
+  filePath: string,
+  fileName: "inksmcp_pull.inx" | "inksmcp_push_gui_state.inx",
+  expectedExtensionId: string,
+  expectedActionId: string,
+  expectedActionParam: "pull" | "push",
+): Promise<CompanionInxActionCheck> {
+  const exists = await fileExists(filePath);
+  const issues: CompanionInxActionCheck["issues"] = [];
+  if (!exists) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_FILE_MISSING",
+      message: "Required InkSMCP extension file is missing.",
+      details: { file: fileName, path: filePath },
+    });
+    return {
+      file: fileName,
+      path: filePath,
+      exists,
+      ok: false,
+      expectedExtensionId,
+      expectedActionId,
+      expectedActionParam,
+      actionParamHidden: false,
+      commandDeclared: false,
+      issues,
+    };
+  }
+
+  let document;
+  try {
+    document = new DOMParser({
+      onError: (level, message) => {
+        if (level !== "warning") {
+          throw new Error(message);
+        }
+      },
+    }).parseFromString(await readFile(filePath, "utf8"), "application/xml");
+  } catch (error) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_INX_INVALID",
+      message: "InkSMCP extension declaration could not be parsed.",
+      details: { file: fileName, path: filePath, message: error instanceof Error ? error.message : String(error) },
+    });
+    return {
+      file: fileName,
+      path: filePath,
+      exists,
+      ok: false,
+      expectedExtensionId,
+      expectedActionId,
+      expectedActionParam,
+      actionParamHidden: false,
+      commandDeclared: false,
+      issues,
+    };
+  }
+
+  const extensionId = textOfFirstElement(document, "id");
+  const actionId = extensionId ? `${extensionId.replaceAll("_", "-")}.noprefs` : undefined;
+  const actionParam = findParamByName(document, "action");
+  const actionParamText = actionParam?.textContent?.trim();
+  const actionParamHidden = actionParam?.getAttribute("gui-hidden") === "true";
+  const commandDeclared = findElementsByLocalName(document, "command").some(
+    (element) =>
+      element.textContent?.trim() === companionScriptFile &&
+      element.getAttribute("interpreter") === "python",
+  );
+
+  if (extensionId !== expectedExtensionId) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_ID_MISMATCH",
+      message: "InkSMCP extension declaration has an unexpected extension id.",
+      details: { file: fileName, expected: expectedExtensionId, actual: extensionId },
+    });
+  }
+  if (actionId !== expectedActionId) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_ACTION_STALE",
+      message: "InkSMCP extension declaration does not derive the expected active-window action id.",
+      details: { file: fileName, expected: expectedActionId, actual: actionId },
+    });
+  }
+  if (!actionParam) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_ACTION_PARAM_MISSING",
+      message: "InkSMCP extension declaration is missing the hidden action parameter.",
+      details: { file: fileName, expected: expectedActionParam },
+    });
+  } else if (actionParamText !== expectedActionParam) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_ACTION_PARAM_STALE",
+      message: "InkSMCP extension declaration has an unexpected action parameter value.",
+      details: { file: fileName, expected: expectedActionParam, actual: actionParamText },
+    });
+  }
+  if (actionParam && !actionParamHidden) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_ACTION_PARAM_VISIBLE",
+      message: "InkSMCP extension action parameter should be hidden from the Inkscape UI.",
+      details: { file: fileName },
+    });
+  }
+  if (!commandDeclared) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_COMMAND_MISSING",
+      message: "InkSMCP extension declaration does not invoke inksmcp_pull.py with the Python interpreter.",
+      details: { file: fileName, expectedCommand: companionScriptFile },
+    });
+  }
+
+  return {
+    file: fileName,
+    path: filePath,
+    exists,
+    ok: issues.length === 0,
+    expectedExtensionId,
+    expectedActionId,
+    extensionId,
+    actionId,
+    expectedActionParam,
+    actionParam: actionParamText,
+    actionParamHidden,
+    commandDeclared,
+    issues,
+  };
+}
+
+async function inspectCompanionConfig(configPath: string): Promise<CompanionExtensionConfigCheck> {
+  const exists = await fileExists(configPath);
+  const issues: CompanionExtensionConfigCheck["issues"] = [];
+  if (!exists) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_CONFIG_MISSING",
+      message: "InkSMCP extension config file is missing.",
+      details: { path: configPath },
+    });
+    return { path: configPath, exists, ok: false, issues };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(configPath, "utf8"));
+  } catch (error) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_CONFIG_INVALID",
+      message: "InkSMCP extension config file is not valid JSON.",
+      details: { path: configPath, message: error instanceof Error ? error.message : String(error) },
+    });
+    return { path: configPath, exists, ok: false, issues };
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    issues.push({
+      code: "INKSMCP_EXTENSION_CONFIG_INVALID",
+      message: "InkSMCP extension config must be a JSON object.",
+      details: { path: configPath },
+    });
+    return { path: configPath, exists, ok: false, issues };
+  }
+
+  const workspaceRoot = (parsed as { workspaceRoot?: unknown }).workspaceRoot;
+  if (typeof workspaceRoot !== "string" || workspaceRoot.trim() === "") {
+    issues.push({
+      code: "INKSMCP_WORKSPACE_ROOT_MISSING",
+      message: "InkSMCP extension config is missing workspaceRoot.",
+      details: { path: configPath },
+    });
+    return { path: configPath, exists, ok: false, issues };
+  }
+
+  return {
+    path: configPath,
+    exists,
+    ok: true,
+    workspaceRoot: path.resolve(workspaceRoot),
+    issues,
+  };
+}
+
+function companionExtensionWarnings(
+  selfCheck: CompanionExtensionSelfCheck,
+): Array<{ code: string; message: string; details?: Record<string, unknown> }> {
+  const warnings: Array<{ code: string; message: string; details?: Record<string, unknown> }> = [];
+  if (!selfCheck.files[companionScriptFile].exists) {
+    warnings.push({
+      code: "INKSMCP_EXTENSION_FILE_MISSING",
+      message: "Required InkSMCP extension script was not found.",
+      details: { file: companionScriptFile, path: selfCheck.files[companionScriptFile].path },
+    });
+  }
+  warnings.push(...selfCheck.pullAction.issues, ...selfCheck.pushAction.issues, ...selfCheck.config.issues);
+  return warnings;
+}
+
+function textOfFirstElement(document: XmlDocument, localName: string): string | undefined {
+  return findElementsByLocalName(document, localName)[0]?.textContent?.trim() || undefined;
+}
+
+function findParamByName(document: XmlDocument, name: string): XmlElement | undefined {
+  return findElementsByLocalName(document, "param").find((element) => element.getAttribute("name") === name);
+}
+
+function findElementsByLocalName(document: XmlDocument, localName: string): XmlElement[] {
+  const all = document.getElementsByTagName("*");
+  const matches: XmlElement[] = [];
+  for (let index = 0; index < all.length; index += 1) {
+    const element = all.item(index);
+    if (element && (element.localName ?? element.nodeName).toLowerCase() === localName.toLowerCase()) {
+      matches.push(element);
+    }
+  }
+  return matches;
 }
 
 function pathCandidates(): string[] {

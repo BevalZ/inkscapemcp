@@ -129,6 +129,69 @@ describe("preview tools", () => {
       extensionDirectory: path.join(root, "inkscape", "extensions"),
       companionExtensionInstalled: true,
       pushExtensionInstalled: true,
+      extensionSelfCheck: {
+        extensionDirectory: path.join(root, "inkscape", "extensions"),
+        files: {
+          "inksmcp_pull.inx": {
+            path: path.join(root, "inkscape", "extensions", "inksmcp_pull.inx"),
+            exists: true,
+          },
+          "inksmcp_push_gui_state.inx": {
+            path: path.join(root, "inkscape", "extensions", "inksmcp_push_gui_state.inx"),
+            exists: true,
+          },
+          "inksmcp_pull.py": {
+            path: path.join(root, "inkscape", "extensions", "inksmcp_pull.py"),
+            exists: true,
+          },
+          "inksmcp-extension.json": {
+            path: path.join(root, "inkscape", "extensions", "inksmcp-extension.json"),
+            exists: true,
+          },
+        },
+        pullAction: {
+          file: "inksmcp_pull.inx",
+          path: path.join(root, "inkscape", "extensions", "inksmcp_pull.inx"),
+          exists: true,
+          ok: true,
+          expectedExtensionId: "dev.hydens.inksmcp.pull_workspace_document",
+          expectedActionId: "dev.hydens.inksmcp.pull-workspace-document.noprefs",
+          extensionId: "dev.hydens.inksmcp.pull_workspace_document",
+          actionId: "dev.hydens.inksmcp.pull-workspace-document.noprefs",
+          expectedActionParam: "pull",
+          actionParam: "pull",
+          actionParamHidden: true,
+          commandDeclared: true,
+          issues: [],
+        },
+        pushAction: {
+          file: "inksmcp_push_gui_state.inx",
+          path: path.join(root, "inkscape", "extensions", "inksmcp_push_gui_state.inx"),
+          exists: true,
+          ok: true,
+          expectedExtensionId: "dev.hydens.inksmcp.push_gui_state",
+          expectedActionId: "dev.hydens.inksmcp.push-gui-state.noprefs",
+          extensionId: "dev.hydens.inksmcp.push_gui_state",
+          actionId: "dev.hydens.inksmcp.push-gui-state.noprefs",
+          expectedActionParam: "push",
+          actionParam: "push",
+          actionParamHidden: true,
+          commandDeclared: true,
+          issues: [],
+        },
+        config: {
+          path: path.join(root, "inkscape", "extensions", "inksmcp-extension.json"),
+          exists: true,
+          ok: true,
+          workspaceRoot: workspace.paths.root,
+          issues: [],
+        },
+        capabilities: {
+          sameWindowRefresh: true,
+          bidirectionalGuiPull: true,
+          configWorkspaceRoot: true,
+        },
+      },
       warnings: [],
     });
 
@@ -145,6 +208,12 @@ describe("preview tools", () => {
         bidirectionalGuiPull: "ready",
         defaultFileRebase: "disabled",
       },
+      workspaceRootCheck: {
+        status: "match",
+        ready: true,
+        expectedWorkspaceRoot: workspace.paths.root,
+        configuredWorkspaceRoot: workspace.paths.root,
+      },
       remediation: expect.arrayContaining([expect.objectContaining({ code: "OPEN_WORKSPACE_CURRENT_SVG" })]),
       automationBoundary: {
         mouseKeyboardAutomation: "diagnostic_fallback_only",
@@ -153,4 +222,124 @@ describe("preview tools", () => {
     });
     await expect(workspace.readSvg("diagnose-doc")).resolves.toBe(before);
   });
+
+  it("reports extension workspace root mismatch without mutating SVG state", async () => {
+    await workspace.createDocument(
+      "diagnose-doc",
+      "Diagnose doc",
+      createSvgDocument({ title: "Diagnose doc", width: 20, height: 20, unit: "px" }),
+    );
+    const before = await workspace.readSvg("diagnose-doc");
+    const inkscape = new InkscapeCli();
+    const configuredWorkspaceRoot = path.join(root, "other-workspace");
+    vi.spyOn(inkscape, "diagnoseGui").mockResolvedValue({
+      binaryAvailable: true,
+      binaryPath: "inkscape",
+      userDataDirectory: path.join(root, "inkscape"),
+      extensionDirectory: path.join(root, "inkscape", "extensions"),
+      companionExtensionInstalled: true,
+      pushExtensionInstalled: true,
+      extensionSelfCheck: companionSelfCheck({
+        extensionDirectory: path.join(root, "inkscape", "extensions"),
+        workspaceRoot: configuredWorkspaceRoot,
+      }),
+      warnings: [],
+    });
+
+    const result = await diagnoseInkscapeGui(
+      { docId: "diagnose-doc" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "diagnose-doc",
+      workspaceRootCheck: {
+        status: "mismatch",
+        ready: false,
+        expectedWorkspaceRoot: workspace.paths.root,
+        configuredWorkspaceRoot: path.resolve(configuredWorkspaceRoot),
+      },
+      capabilityReadiness: {
+        sameWindowRefresh: "not_ready",
+        bidirectionalGuiPull: "not_ready",
+      },
+      diagnostics: {
+        warnings: expect.arrayContaining([
+          expect.objectContaining({ code: "INKSMCP_WORKSPACE_ROOT_MISMATCH" }),
+        ]),
+      },
+      remediation: expect.arrayContaining([
+        expect.objectContaining({ code: "REINSTALL_WITH_CURRENT_WORKSPACE" }),
+      ]),
+    });
+    await expect(workspace.readSvg("diagnose-doc")).resolves.toBe(before);
+  });
 });
+
+function companionSelfCheck(input: { extensionDirectory: string; workspaceRoot: string }) {
+  const configPath = path.join(input.extensionDirectory, "inksmcp-extension.json");
+  return {
+    extensionDirectory: input.extensionDirectory,
+    files: {
+      "inksmcp_pull.inx": {
+        path: path.join(input.extensionDirectory, "inksmcp_pull.inx"),
+        exists: true,
+      },
+      "inksmcp_push_gui_state.inx": {
+        path: path.join(input.extensionDirectory, "inksmcp_push_gui_state.inx"),
+        exists: true,
+      },
+      "inksmcp_pull.py": {
+        path: path.join(input.extensionDirectory, "inksmcp_pull.py"),
+        exists: true,
+      },
+      "inksmcp-extension.json": {
+        path: configPath,
+        exists: true,
+      },
+    },
+    pullAction: {
+      file: "inksmcp_pull.inx" as const,
+      path: path.join(input.extensionDirectory, "inksmcp_pull.inx"),
+      exists: true,
+      ok: true,
+      expectedExtensionId: "dev.hydens.inksmcp.pull_workspace_document",
+      expectedActionId: "dev.hydens.inksmcp.pull-workspace-document.noprefs",
+      extensionId: "dev.hydens.inksmcp.pull_workspace_document",
+      actionId: "dev.hydens.inksmcp.pull-workspace-document.noprefs",
+      expectedActionParam: "pull" as const,
+      actionParam: "pull",
+      actionParamHidden: true,
+      commandDeclared: true,
+      issues: [],
+    },
+    pushAction: {
+      file: "inksmcp_push_gui_state.inx" as const,
+      path: path.join(input.extensionDirectory, "inksmcp_push_gui_state.inx"),
+      exists: true,
+      ok: true,
+      expectedExtensionId: "dev.hydens.inksmcp.push_gui_state",
+      expectedActionId: "dev.hydens.inksmcp.push-gui-state.noprefs",
+      extensionId: "dev.hydens.inksmcp.push_gui_state",
+      actionId: "dev.hydens.inksmcp.push-gui-state.noprefs",
+      expectedActionParam: "push" as const,
+      actionParam: "push",
+      actionParamHidden: true,
+      commandDeclared: true,
+      issues: [],
+    },
+    config: {
+      path: configPath,
+      exists: true,
+      ok: true,
+      workspaceRoot: path.resolve(input.workspaceRoot),
+      issues: [],
+    },
+    capabilities: {
+      sameWindowRefresh: true,
+      bidirectionalGuiPull: true,
+      configWorkspaceRoot: true,
+    },
+  };
+}

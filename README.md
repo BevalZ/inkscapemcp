@@ -236,7 +236,7 @@ For automatic GUI refresh, `update_element`, `nudge_path_element`, `replace_path
 
 `refresh_in_inkscape` uses the companion extension by default and does not open another Inkscape window. It does not run Inkscape's active-window `file-rebase` action unless `allowUnstableRebase: true` is explicitly supplied; keep that path for manual experiments only.
 
-`diagnose_inkscape_gui` inspects the Inkscape binary, user extension directory, and InkSMCP companion extension files without mutating SVG state and without mouse/keyboard automation. It returns capability readiness and remediation hints for same-window refresh and bidirectional GUI pull. GUI automation remains diagnostic fallback only; the primary path is companion extension refresh or allowlisted active-window actions.
+`diagnose_inkscape_gui` inspects the Inkscape binary, user extension directory, and InkSMCP companion extension files without mutating SVG state and without mouse/keyboard automation. It returns capability readiness and remediation hints for same-window refresh and bidirectional GUI pull. The diagnostic payload includes an `extensionSelfCheck` for installed file presence, pull/push `.inx` action declarations, Python command wiring, config JSON validity, and a `workspaceRootCheck` comparing `inksmcp-extension.json` with the current MCP workspace. Missing files, stale action declarations, invalid config, missing `workspaceRoot`, and wrong workspace roots are reported as structured warnings with exact reinstall/config remediation. GUI automation remains diagnostic fallback only; the primary path is companion extension refresh or allowlisted active-window actions.
 
 ## Phase 2 Notes
 

@@ -23,8 +23,10 @@ describe("Inkscape companion extension", () => {
     const inx = await readFile(path.join(repoRoot, "inkscape-extension", "inksmcp_pull.inx"), "utf8");
 
     expect(inx).toContain("<submenu name=\"InkSMCP\"/>");
+    expect(inx).toContain("<id>dev.hydens.inksmcp.pull_workspace_document</id>");
     expect(inx).toContain("<command location=\"inx\" interpreter=\"python\">inksmcp_pull.py</command>");
     expect(inx).toContain("<param name=\"doc_id\" type=\"string\"");
+    expect(inx).toContain("<param name=\"action\" type=\"string\" gui-hidden=\"true\">pull</param>");
   });
 
   it("declares the hidden push GUI state extension action", async () => {
