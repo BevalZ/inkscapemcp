@@ -26,8 +26,10 @@ import {
   diffDocumentSnapshotsSchema,
   importSvgDocumentSchema,
   listHistorySchema,
+  listOperationPreviewsSchema,
   previewSvgOperationsSchema,
   queryDocumentSchema,
+  readOperationPreviewSchema,
   recoverDocumentSchema,
   replayOperationsSchema,
   replaceDocumentSvgSchema,
@@ -329,6 +331,35 @@ function assertDeterministicReplayOperations(operations: SvgOperation[]): void {
   }
 }
 
+async function maybeSaveOperationPreview(input: {
+  ctx: ToolContext;
+  docId: string;
+  toolName: "preview_svg_operations" | "replay_operations";
+  savePreview?: boolean;
+  previewLabel?: string;
+  candidateSvg: string;
+  diff: SvgOperationDiff;
+  operationCount: number;
+  responseMode: "compact" | "full";
+  previewChangedElementIds: string[];
+  baseline?: { revision: number; contentHash: string };
+}) {
+  if (!input.savePreview) return {};
+  return {
+    operationPreview: await input.ctx.workspace.writeOperationPreviewArtifact({
+      docId: input.docId,
+      toolName: input.toolName,
+      candidateSvg: input.candidateSvg,
+      diff: input.diff,
+      operationCount: input.operationCount,
+      responseMode: input.responseMode,
+      previewChangedElementIds: input.previewChangedElementIds,
+      ...(input.previewLabel ? { label: input.previewLabel } : {}),
+      ...(input.baseline ? { baseline: input.baseline } : {}),
+    }),
+  };
+}
+
 export async function listHistory(input: z.infer<typeof listHistorySchema>, ctx: ToolContext) {
   return {
     ok: true,
@@ -347,6 +378,18 @@ export async function previewSvgOperations(input: z.infer<typeof previewSvgOpera
   const preview = applyOperationsToSvg(svg, input.operations);
   const diff = diffSvgDocuments(svg, preview.svg);
   const compact = compactOperationPreview(input, diff, preview.result);
+  const saved = await maybeSaveOperationPreview({
+    ctx,
+    docId: input.docId,
+    toolName: "preview_svg_operations",
+    savePreview: input.savePreview,
+    previewLabel: input.previewLabel,
+    candidateSvg: preview.svg,
+    diff,
+    operationCount: input.operations.length,
+    responseMode: input.responseMode,
+    previewChangedElementIds: preview.result.changedElementIds,
+  });
   const response =
     input.responseMode === "full"
       ? {
@@ -358,6 +401,7 @@ export async function previewSvgOperations(input: z.infer<typeof previewSvgOpera
 
   return {
     ...response,
+    ...saved,
     ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
     ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
@@ -378,6 +422,19 @@ export async function replayOperations(input: z.infer<typeof replayOperationsSch
     const preview = applyOperationsToSvg(svg, input.operations);
     const diff = diffSvgDocuments(svg, preview.svg);
     const compact = compactOperationPreview(input, diff, preview.result);
+    const saved = await maybeSaveOperationPreview({
+      ctx,
+      docId: input.docId,
+      toolName: "replay_operations",
+      savePreview: input.savePreview,
+      previewLabel: input.previewLabel,
+      candidateSvg: preview.svg,
+      diff,
+      operationCount: input.operations.length,
+      responseMode: input.responseMode,
+      previewChangedElementIds: preview.result.changedElementIds,
+      ...(input.baseline ? { baseline: input.baseline } : {}),
+    });
     const response =
       input.responseMode === "full"
         ? {
@@ -395,11 +452,17 @@ export async function replayOperations(input: z.infer<typeof replayOperationsSch
 
     return {
       ...response,
+      ...saved,
       ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
       ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
     };
   }
 
+  if (input.savePreview || input.previewLabel) {
+    throw new InkMcpError("INVALID_INPUT", "replay_operations savePreview is only valid with dryRun: true.", {
+      dryRunRequired: true,
+    });
+  }
   if (!input.baseline) {
     throw new InkMcpError("INVALID_INPUT", "replay_operations write mode requires baseline revision and contentHash.", {
       required: ["baseline.revision", "baseline.contentHash"],
@@ -464,6 +527,44 @@ export async function replayOperations(input: z.infer<typeof replayOperationsSch
           currentSvgPath: write.paths.currentSvg,
         };
   return withGuiRefreshResult(withWriteDiagnostics(payload, write), refresh);
+}
+
+export async function listOperationPreviews(input: z.infer<typeof listOperationPreviewsSchema>, ctx: ToolContext) {
+  return {
+    ok: true,
+    docId: input.docId,
+    previews: await ctx.workspace.listOperationPreviews(input.docId),
+  };
+}
+
+export async function readOperationPreview(input: z.infer<typeof readOperationPreviewSchema>, ctx: ToolContext) {
+  const artifact = await ctx.workspace.readOperationPreview(input.docId, input.previewId);
+  const metadata = artifact.metadata;
+  return {
+    ok: true,
+    docId: input.docId,
+    previewId: input.previewId,
+    metadata: {
+      previewId: metadata.previewId,
+      docId: metadata.docId,
+      toolName: metadata.toolName,
+      generatedAt: metadata.generatedAt,
+      ...(metadata.label ? { label: metadata.label } : {}),
+      operationCount: metadata.operationCount,
+      responseMode: metadata.responseMode,
+      ...(metadata.baseline ? { baseline: metadata.baseline } : {}),
+      dryRun: true,
+      svgPath: metadata.svgPath,
+      metadataPath: metadata.metadataPath,
+      summary: metadata.summary,
+      addedElementIds: metadata.addedElementIds,
+      removedElementIds: metadata.removedElementIds,
+      changedElementIds: metadata.changedElementIds,
+      previewChangedElementIds: metadata.previewChangedElementIds,
+    },
+    diff: metadata.diff,
+    ...(input.includeSvg ? { svg: artifact.svg } : {}),
+  };
 }
 
 export async function diffDocumentSnapshots(input: z.infer<typeof diffDocumentSnapshotsSchema>, ctx: ToolContext) {

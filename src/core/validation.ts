@@ -235,6 +235,8 @@ export const previewSvgOperationsSchema = z.object({
   responseMode: z.enum(["compact", "full"]).default("compact"),
   skipPrePull: z.boolean().default(false),
   allowStaleRead: z.boolean().default(false),
+  savePreview: z.boolean().default(false),
+  previewLabel: z.string().trim().min(1).max(80).optional(),
 });
 
 const operationReplayBaselineSchema = z.object({
@@ -250,6 +252,18 @@ export const replayOperationsSchema = z.object({
   responseMode: z.enum(["compact", "full"]).default("compact"),
   skipPrePull: z.boolean().default(false),
   allowStaleRead: z.boolean().default(false),
+  savePreview: z.boolean().default(false),
+  previewLabel: z.string().trim().min(1).max(80).optional(),
+});
+
+export const listOperationPreviewsSchema = z.object({
+  docId: docIdSchema,
+});
+
+export const readOperationPreviewSchema = z.object({
+  docId: docIdSchema,
+  previewId: z.string().min(1),
+  includeSvg: z.boolean().default(false),
 });
 
 export const insertSvgFragmentSchema = z.object({

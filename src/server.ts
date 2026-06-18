@@ -25,6 +25,7 @@ import {
   importSvgDocumentSchema,
   insertSvgFragmentSchema,
   listHistorySchema,
+  listOperationPreviewsSchema,
   nudgePathElementSchema,
   openInInkscapeSchema,
   pathDifferenceSchema,
@@ -35,6 +36,7 @@ import {
   queryPathNodesSchema,
   recoverDocumentSchema,
   queryDocumentSchema,
+  readOperationPreviewSchema,
   refreshInInkscapeSchema,
   renderPreviewSchema,
   replayOperationsSchema,
@@ -57,8 +59,10 @@ import {
   diffDocumentSnapshots,
   importSvgDocument,
   listHistory,
+  listOperationPreviews,
   previewSvgOperations,
   queryDocument,
+  readOperationPreview,
   recoverDocument,
   replayOperations,
   replaceDocumentSvg,
@@ -365,6 +369,27 @@ export function createServer() {
       inputSchema: replayOperationsSchema,
     },
     (input) => runTool("replay_operations", () => replayOperations(input, ctx)),
+  );
+
+  server.registerTool(
+    "list_operation_previews",
+    {
+      title: "List operation previews",
+      description: "List saved read-only dry-run operation preview artifacts for a document.",
+      inputSchema: listOperationPreviewsSchema,
+    },
+    (input) => runTool("list_operation_previews", () => listOperationPreviews(input, ctx)),
+  );
+
+  server.registerTool(
+    "read_operation_preview",
+    {
+      title: "Read operation preview",
+      description:
+        "Read a saved operation preview artifact. Returns metadata and full diff, and includes SVG content only when requested.",
+      inputSchema: readOperationPreviewSchema,
+    },
+    (input) => runTool("read_operation_preview", () => readOperationPreview(input, ctx)),
   );
 
   server.registerTool(

@@ -23,6 +23,7 @@ export interface DocumentPaths {
   metadata: string;
   historyDir: string;
   operationDiffsDir: string;
+  operationPreviewsDir: string;
   mergePreviewsDir: string;
   operationsLog: string;
 }
@@ -95,6 +96,45 @@ export interface OperationDiffArtifact {
   summary: SvgOperationDiff["summary"];
 }
 
+export interface OperationPreviewArtifactMetadata {
+  previewId: string;
+  docId: string;
+  toolName: "preview_svg_operations" | "replay_operations";
+  generatedAt: string;
+  label?: string;
+  operationCount: number;
+  responseMode: "compact" | "full";
+  baseline?: { revision: number; contentHash: string };
+  dryRun: true;
+  svgPath: string;
+  metadataPath: string;
+  diff: SvgOperationDiff;
+  summary: SvgOperationDiff["summary"];
+  addedElementIds: string[];
+  removedElementIds: string[];
+  changedElementIds: string[];
+  previewChangedElementIds: string[];
+}
+
+export interface OperationPreviewArtifactSummary {
+  previewId: string;
+  docId: string;
+  toolName: OperationPreviewArtifactMetadata["toolName"];
+  generatedAt: string;
+  label?: string;
+  operationCount: number;
+  responseMode: "compact" | "full";
+  baseline?: { revision: number; contentHash: string };
+  dryRun: true;
+  svgPath: string;
+  metadataPath: string;
+  summary: SvgOperationDiff["summary"];
+  addedElementIds: string[];
+  removedElementIds: string[];
+  changedElementIds: string[];
+  previewChangedElementIds: string[];
+}
+
 export interface GuiMergePreviewArtifact {
   svgPath: string;
   metadataPath: string;
@@ -162,6 +202,7 @@ export class Workspace {
       metadata: this.resolveWithinWorkspace("drawings", docId, "metadata.json"),
       historyDir: this.resolveWithinWorkspace("drawings", docId, "history"),
       operationDiffsDir: this.resolveWithinWorkspace("drawings", docId, "operation-diffs"),
+      operationPreviewsDir: this.resolveWithinWorkspace("drawings", docId, "operation-previews"),
       mergePreviewsDir: this.resolveWithinWorkspace("drawings", docId, "merge-previews"),
       operationsLog: this.resolveWithinWorkspace("drawings", docId, "operations.log"),
     };
@@ -423,6 +464,100 @@ export class Workspace {
     await this.atomicWrite(svgPath, input.svg);
     await this.atomicWrite(metadataPath, `${JSON.stringify(artifact, null, 2)}\n`);
     return artifact;
+  }
+
+  async writeOperationPreviewArtifact(input: {
+    docId: string;
+    toolName: OperationPreviewArtifactMetadata["toolName"];
+    candidateSvg: string;
+    diff: SvgOperationDiff;
+    operationCount: number;
+    responseMode: "compact" | "full";
+    previewChangedElementIds: string[];
+    label?: string;
+    baseline?: { revision: number; contentHash: string };
+  }): Promise<OperationPreviewArtifactSummary> {
+    await this.ensureReady();
+    const paths = this.documentPaths(input.docId);
+    await this.assertDocumentExists(paths);
+    parseFullSvg(input.candidateSvg);
+    await mkdir(paths.operationPreviewsDir, { recursive: true });
+    const generatedAt = new Date().toISOString();
+    const previewId = `${timestampId()}-${previewToolSlug(input.toolName)}${labelSuffix(input.label)}`;
+    const svgPath = this.resolveWithinWorkspace("drawings", input.docId, "operation-previews", `${previewId}.svg`);
+    const metadataPath = this.resolveWithinWorkspace("drawings", input.docId, "operation-previews", `${previewId}.json`);
+    const metadata: OperationPreviewArtifactMetadata = {
+      previewId,
+      docId: input.docId,
+      toolName: input.toolName,
+      generatedAt,
+      ...(input.label ? { label: input.label } : {}),
+      operationCount: input.operationCount,
+      responseMode: input.responseMode,
+      ...(input.baseline ? { baseline: input.baseline } : {}),
+      dryRun: true,
+      svgPath,
+      metadataPath,
+      diff: input.diff,
+      summary: input.diff.summary,
+      addedElementIds: input.diff.addedElementIds,
+      removedElementIds: input.diff.removedElementIds,
+      changedElementIds: input.diff.changedElementIds,
+      previewChangedElementIds: input.previewChangedElementIds,
+    };
+    await this.atomicWrite(svgPath, input.candidateSvg);
+    await this.atomicWrite(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+    return compactOperationPreviewArtifact(metadata);
+  }
+
+  async listOperationPreviews(docId: string): Promise<OperationPreviewArtifactSummary[]> {
+    const paths = this.documentPaths(docId);
+    await this.assertDocumentExists(paths);
+    const entries = await readdir(paths.operationPreviewsDir, { withFileTypes: true }).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    });
+    const previews = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map(async (entry) => {
+          const raw = await readFile(path.join(paths.operationPreviewsDir, entry.name), "utf8");
+          return compactOperationPreviewArtifact(JSON.parse(raw) as OperationPreviewArtifactMetadata);
+        }),
+    );
+    return previews.sort((a, b) => a.previewId.localeCompare(b.previewId));
+  }
+
+  async readOperationPreview(
+    docId: string,
+    previewId: string,
+  ): Promise<{ metadata: OperationPreviewArtifactMetadata; svg: string }> {
+    const paths = this.documentPaths(docId);
+    await this.assertDocumentExists(paths);
+    const safePreviewId = assertSafeOperationPreviewId(previewId);
+    const metadataPath = this.resolveWithinWorkspace("drawings", docId, "operation-previews", `${safePreviewId}.json`);
+    const svgPath = this.resolveWithinWorkspace("drawings", docId, "operation-previews", `${safePreviewId}.svg`);
+    const raw = await readFile(metadataPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new InkMcpError("DOC_NOT_FOUND", "Operation preview artifact was not found.", { previewId });
+      }
+      throw error;
+    });
+    const metadata = JSON.parse(raw) as OperationPreviewArtifactMetadata;
+    if (metadata.docId !== docId || metadata.previewId !== safePreviewId) {
+      throw new InkMcpError("INVALID_INPUT", "Operation preview metadata does not match the requested document.", {
+        docId,
+        previewId,
+      });
+    }
+    const svg = await readFile(svgPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new InkMcpError("DOC_NOT_FOUND", "Operation preview SVG artifact was not found.", { previewId });
+      }
+      throw error;
+    });
+    parseFullSvg(svg);
+    return { metadata, svg };
   }
 
   async listHistory(docId: string): Promise<Array<{ snapshotId: string; path: string; size: number; createdAt: string }>> {
@@ -783,6 +918,44 @@ function checkpointToolName(label?: string): string {
   return slug ? `create_checkpoint-${slug}` : "create_checkpoint";
 }
 
+function previewToolSlug(toolName: OperationPreviewArtifactMetadata["toolName"]): string {
+  return toolName.replaceAll("_", "-");
+}
+
+function labelSuffix(label?: string): string {
+  if (!label) return "";
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug ? `-${slug}` : "";
+}
+
+function compactOperationPreviewArtifact(
+  metadata: OperationPreviewArtifactMetadata,
+): OperationPreviewArtifactSummary {
+  return {
+    previewId: metadata.previewId,
+    docId: metadata.docId,
+    toolName: metadata.toolName,
+    generatedAt: metadata.generatedAt,
+    ...(metadata.label ? { label: metadata.label } : {}),
+    operationCount: metadata.operationCount,
+    responseMode: metadata.responseMode,
+    ...(metadata.baseline ? { baseline: metadata.baseline } : {}),
+    dryRun: true,
+    svgPath: metadata.svgPath,
+    metadataPath: metadata.metadataPath,
+    summary: metadata.summary,
+    addedElementIds: metadata.addedElementIds,
+    removedElementIds: metadata.removedElementIds,
+    changedElementIds: metadata.changedElementIds,
+    previewChangedElementIds: metadata.previewChangedElementIds,
+  };
+}
+
 function assertSafeConnectionId(connectionId: string): string {
   if (!/^conn-[A-Za-z0-9_-]{8,80}$/.test(connectionId)) {
     throw new InkMcpError("INVALID_INPUT", "Invalid connection id.", { connectionId });
@@ -795,6 +968,13 @@ function assertSafeRequestId(requestId: string): string {
     throw new InkMcpError("INVALID_INPUT", "Invalid GUI pull request id.", { requestId });
   }
   return requestId;
+}
+
+function assertSafeOperationPreviewId(previewId: string): string {
+  if (!/^[A-Za-z0-9_.-]+$/.test(previewId)) {
+    throw new InkMcpError("INVALID_INPUT", "Invalid operation preview id.", { previewId });
+  }
+  return previewId;
 }
 
 function isRemoteUriOrUnc(inputPath: string): boolean {
