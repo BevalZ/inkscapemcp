@@ -89,6 +89,46 @@ Implemented `apply_id_repairs` as the explicit write boundary for reviewed id re
 - Continue the Phase 1 roadmap with the next bounded vertical slice, likely saved id-repair proposal artifacts or operation group/checkpoint ergonomics.
 
 
+## Session 18: Phase 1 Merge Preview Artifact Inspection
+
+**Date**: 2026-06-19
+**Task**: Phase 1 Merge Preview Artifact Inspection
+**Branch**: `main`
+
+### Summary
+
+Implemented read-only inspection tools for GUI merge preview artifacts saved by `pull_gui_state({ conflictPolicy: "preview_only" })`, including list/read helpers, safe workspace-confined artifact validation, optional SVG payloads, documentation, roadmap memory, and tests.
+
+### Main Changes
+
+- Added `list_merge_previews` and `read_merge_preview`.
+- Added workspace helpers for compact merge preview metadata and optional SVG reads.
+- Validated merge preview ids and metadata paths against the requested document.
+- Added tests proving list/read behavior, no SVG payload by default, no GUI refresh/pre-pull, and no workspace mutation.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2e99083` | feat: add Phase 1 merge preview inspection |
+
+### Testing
+
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Continue Phase 1 with the next bounded slice, likely style/dependency query enrichment or saved proposal artifact ergonomics.
+
+
 ## Session 2: Improve InkSMCP path editing workflows
 
 **Date**: 2026-06-18
