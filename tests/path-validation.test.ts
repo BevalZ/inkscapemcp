@@ -759,6 +759,97 @@ describe("path tool validation", () => {
     ).toThrow();
   });
 
+  it("accepts skew point transforms and rejects invalid skew inputs", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "skew",
+          axis: "x",
+          origin: { x: 10, y: 20 },
+          angleDegrees: 45,
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "skew",
+        axis: "x",
+        origin: { x: 10, y: 20 },
+        angleDegrees: 45,
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "point_type",
+          pointTypes: ["end"],
+        },
+        transform: {
+          type: "skew",
+          axis: "y",
+          origin: { x: 10, y: 20 },
+          angleDegrees: -45,
+        },
+      }),
+    ).toMatchObject({
+      transform: {
+        type: "skew",
+        axis: "y",
+        angleDegrees: -45,
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "skew",
+          axis: "diagonal",
+          origin: { x: 10, y: 20 },
+          angleDegrees: 45,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "skew",
+          axis: "x",
+          origin: { x: 10, y: 20 },
+          angleDegrees: 0,
+        },
+      }),
+    ).toThrow("non-zero");
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: {
+          type: "skew",
+          axis: "x",
+          origin: { x: Number.NaN, y: 20 },
+          angleDegrees: 45,
+        },
+      }),
+    ).toThrow();
+  });
+
   it("accepts nearest point selectors and rejects invalid nearest inputs", () => {
     expect(
       transformPathPointsSchema.parse({

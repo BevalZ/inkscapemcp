@@ -397,6 +397,15 @@ export const transformPathPointsSchema = z.object({
         y: z.number().finite(),
       }),
     }),
+    z.object({
+      type: z.literal("skew"),
+      axis: z.enum(["x", "y"]),
+      origin: z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+      }),
+      angleDegrees: z.number().finite(),
+    }),
   ]).superRefine((transform, ctx) => {
     if (transform.type === "translate" && transform.dx === 0 && transform.dy === 0) {
       ctx.addIssue({
@@ -416,6 +425,13 @@ export const transformPathPointsSchema = z.object({
       ctx.addIssue({
         code: "custom",
         message: "Rotate transform angleDegrees must be non-zero.",
+        path: ["angleDegrees"],
+      });
+    }
+    if (transform.type === "skew" && transform.angleDegrees === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Skew transform angleDegrees must be non-zero.",
         path: ["angleDegrees"],
       });
     }

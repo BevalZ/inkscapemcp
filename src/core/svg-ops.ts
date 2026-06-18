@@ -188,6 +188,12 @@ export type PathPointTransform =
       type: "reflect";
       axis: "vertical" | "horizontal";
       origin: { x: number; y: number };
+    }
+  | {
+      type: "skew";
+      axis: "x" | "y";
+      origin: { x: number; y: number };
+      angleDegrees: number;
     };
 
 export function addElementToSvg(
@@ -735,6 +741,33 @@ function validatePathPointTransform(transform: PathPointTransform): void {
     return;
   }
 
+  if (transform.type === "skew") {
+    if (transform.axis !== "x" && transform.axis !== "y") {
+      throw new InkMcpError("INVALID_INPUT", "Skew transform axis is unsupported.", {
+        axis: transform.axis,
+      });
+    }
+    if (
+      !Number.isFinite(transform.origin.x) ||
+      !Number.isFinite(transform.origin.y) ||
+      !Number.isFinite(transform.angleDegrees)
+    ) {
+      throw new InkMcpError("INVALID_INPUT", "Skew transform origin and angleDegrees must be finite.", transform);
+    }
+    if (transform.angleDegrees === 0) {
+      throw new InkMcpError("INVALID_INPUT", "Skew transform angleDegrees must be non-zero.", {
+        angleDegrees: transform.angleDegrees,
+      });
+    }
+    const shear = Math.tan(transform.angleDegrees * (Math.PI / 180));
+    if (!Number.isFinite(shear)) {
+      throw new InkMcpError("INVALID_INPUT", "Skew transform tangent must be finite.", {
+        angleDegrees: transform.angleDegrees,
+      });
+    }
+    return;
+  }
+
   for (const point of transform.points) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
       throw new InkMcpError("INVALID_INPUT", `${transform.type} target coordinates must be finite.`, point);
@@ -747,7 +780,8 @@ function validateResolvedPathPointTransform(points: PathPointSelection[], transf
     transform.type === "translate" ||
     transform.type === "scale" ||
     transform.type === "rotate" ||
-    transform.type === "reflect"
+    transform.type === "reflect" ||
+    transform.type === "skew"
   ) return;
   if (transform.points.length !== points.length) {
     throw new InkMcpError("INVALID_INPUT", `${transform.type} target point count must match selected point count.`, {
@@ -1129,6 +1163,24 @@ function pathPointTransformEdits(
           point: point.point,
           x: transform.axis === "vertical" ? transform.origin.x * 2 - absolutePoint.x : absolutePoint.x,
           y: transform.axis === "horizontal" ? transform.origin.y * 2 - absolutePoint.y : absolutePoint.y,
+        };
+      })
+      .sort((left, right) => left.segmentIndex - right.segmentIndex);
+  }
+
+  if (transform.type === "skew") {
+    const shear = Math.tan(transform.angleDegrees * (Math.PI / 180));
+    return points
+      .map((point) => {
+        const absolutePoint = getSelectedAbsolutePoint(segments, point);
+        const offsetX = absolutePoint.x - transform.origin.x;
+        const offsetY = absolutePoint.y - transform.origin.y;
+        return {
+          type: "set_point_absolute" as const,
+          segmentIndex: point.segmentIndex,
+          point: point.point,
+          x: transform.axis === "x" ? transform.origin.x + offsetX + shear * offsetY : absolutePoint.x,
+          y: transform.axis === "y" ? transform.origin.y + shear * offsetX + offsetY : absolutePoint.y,
         };
       })
       .sort((left, right) => left.segmentIndex - right.segmentIndex);

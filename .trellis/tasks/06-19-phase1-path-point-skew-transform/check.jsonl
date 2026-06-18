@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend quality checklist for verification."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Confirm invalid skew inputs leave state untouched."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Confirm tests, typecheck, build, and no forbidden patterns."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Confirm write logging remains compact."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Confirm snapshot-before-write and workspace persistence rules."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Confirm roadmap memory updated with new contract."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared quality thinking guide index."}

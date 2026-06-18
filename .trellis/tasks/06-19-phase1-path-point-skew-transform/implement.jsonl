@@ -1,0 +1,9 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend pre-development checklist and quality gate for MCP tool changes."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Confirms core/tool boundary and module ownership."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Validation failures must be explicit and leave workspace state untouched."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Snapshot, schema, and test expectations for backend changes."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Successful write tools append compact operation logs without payload dumps."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Filesystem persistence and snapshot-before-write rules."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Path editing reliability and Phase 1 loop contracts."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared thinking guide index."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search and reuse existing path transform patterns before adding helper code."}

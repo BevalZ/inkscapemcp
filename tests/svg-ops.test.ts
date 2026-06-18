@@ -1222,6 +1222,81 @@ describe("SVG operations", () => {
     });
   });
 
+  it("skews selected path points along the x axis around an explicit absolute origin", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 c2 4 6 8 10 12 L30 34",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "c1" },
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: {
+        type: "skew",
+        axis: "x",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 45,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 c6 4 6 8 22 12 L54 34",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 1, point: "c1" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [1, 2],
+      transform: {
+        type: "skew",
+        axis: "x",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 45,
+      },
+    });
+  });
+
+  it("skews point-type-selected endpoints along the y axis in path order", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 6 q2 4 8 10",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "point_type",
+        pointTypes: ["end"],
+      },
+      transform: {
+        type: "skew",
+        axis: "y",
+        origin: { x: 10, y: 10 },
+        angleDegrees: 45,
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 l5 11 q2 4 8 18",
+      selectedPointCount: 3,
+      selectedPoints: [
+        { segmentIndex: 0, point: "end" },
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [0, 1, 2],
+    });
+  });
+
   it("transforms the nearest editable path point by absolute coordinates", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
