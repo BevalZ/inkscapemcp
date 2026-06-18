@@ -72,3 +72,37 @@ Added advanced path editing and node inspection tools, automatic Inkscape refres
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Implement bidirectional Inkscape GUI sync
+
+**Date**: 2026-06-18
+**Task**: Implement bidirectional Inkscape GUI sync
+**Branch**: `main`
+
+### Summary
+
+Implemented explicit bidirectional GUI sync with connection identity, GUI pull artifacts, pre-tool pull, conflict handling, metadata stripping on export, extension push support, tests, and backend contract docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb32a7e` | (see git log) |
+| `6dfaaed` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
