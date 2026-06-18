@@ -325,7 +325,7 @@ export function createServer() {
     {
       title: "Edit path nodes",
       description:
-        "Move, insert, or delete M/L/C/Q/Z path segments on an existing path without replacing the document.",
+        "Move or set editable M/L/H/V/C/Q/Z path points, or insert/delete supported structured path segments.",
       inputSchema: editPathNodesSchema,
     },
     (input) => runTool("edit_path_nodes", () => editPathNodes(input, ctx)),
@@ -347,7 +347,7 @@ export function createServer() {
     {
       title: "Query path nodes",
       description:
-        "Return editable M/L/C/Q/Z path segment indexes, raw points, and absolute points for precise node edits.",
+        "Return editable M/L/H/V/C/Q/Z path segment indexes, raw points, and absolute points for precise node edits.",
       inputSchema: queryPathNodesSchema,
     },
     (input) => runTool("query_path_nodes", () => queryPathNodes(input, ctx)),

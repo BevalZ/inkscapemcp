@@ -10,6 +10,8 @@ export type PathSegment =
 export type EditablePathSegment =
   | { cmd: "M" | "m"; x: number; y: number }
   | { cmd: "L" | "l"; x: number; y: number }
+  | { cmd: "H" | "h"; x: number }
+  | { cmd: "V" | "v"; y: number }
   | { cmd: "C" | "c"; x1: number; y1: number; x2: number; y2: number; x: number; y: number }
   | { cmd: "Q" | "q"; x1: number; y1: number; x: number; y: number }
   | { cmd: "Z" | "z" };
@@ -167,6 +169,12 @@ export function editablePathSegmentsToD(segments: EditablePathSegment[]): string
       case "L":
       case "l":
         return `${segment.cmd}${formatPathNumber(segment.x)} ${formatPathNumber(segment.y)}`;
+      case "H":
+      case "h":
+        return `${segment.cmd}${formatPathNumber(segment.x)}`;
+      case "V":
+      case "v":
+        return `${segment.cmd}${formatPathNumber(segment.y)}`;
       case "C":
       case "c":
         return `${segment.cmd}${formatPathNumber(segment.x1)} ${formatPathNumber(segment.y1)} ${formatPathNumber(segment.x2)} ${formatPathNumber(segment.y2)} ${formatPathNumber(segment.x)} ${formatPathNumber(segment.y)}`;
@@ -285,6 +293,24 @@ function describeEditablePathSegments(segments: EditablePathSegment[]): Editable
         if (segment.cmd === "M" || segment.cmd === "m") {
           subpathStart = current;
         }
+        break;
+      case "H":
+      case "h":
+        points.end = { x: segment.x, y: relative ? 0 : base.y };
+        absolutePoints.end = {
+          x: relative ? base.x + segment.x : segment.x,
+          y: base.y,
+        };
+        current = absolutePoints.end;
+        break;
+      case "V":
+      case "v":
+        points.end = { x: relative ? 0 : base.x, y: segment.y };
+        absolutePoints.end = {
+          x: base.x,
+          y: relative ? base.y + segment.y : segment.y,
+        };
+        current = absolutePoints.end;
         break;
       case "C":
       case "c":
@@ -508,8 +534,8 @@ function formatPathNumber(value: number): string {
 }
 
 function assertEditablePathCommand(command: string): asserts command is EditablePathSegment["cmd"] {
-  if (!["M", "m", "L", "l", "C", "c", "Q", "q", "Z", "z"].includes(command)) {
-    throw new InkMcpError("INVALID_INPUT", "edit_path_nodes supports only M, L, C, Q, and Z path commands.", {
+  if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "Z", "z"].includes(command)) {
+    throw new InkMcpError("INVALID_INPUT", "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.", {
       command,
     });
   }
@@ -541,6 +567,12 @@ function editableSegmentFromValues(command: string | undefined, values: number[]
     case "L":
     case "l":
       return { cmd: command, x: values[0], y: values[1] };
+    case "H":
+    case "h":
+      return { cmd: command, x: values[0] };
+    case "V":
+    case "v":
+      return { cmd: command, y: values[0] };
     case "C":
     case "c":
       return { cmd: command, x1: values[0], y1: values[1], x2: values[2], y2: values[3], x: values[4], y: values[5] };
@@ -594,7 +626,29 @@ function movePathPoint(segments: EditablePathSegment[], edit: Extract<PathNodeEd
 
   const point = edit.point;
   if (point === "end") {
-    if (!("x" in segment)) {
+    if (segment.cmd === "H" || segment.cmd === "h") {
+      if (dy !== 0) {
+        throw new InkMcpError("INVALID_INPUT", "H path endpoints cannot move vertically without converting the command.", {
+          segmentIndex: edit.segmentIndex,
+          command: segment.cmd,
+          dy,
+        });
+      }
+      segment.x += dx;
+      return;
+    }
+    if (segment.cmd === "V" || segment.cmd === "v") {
+      if (dx !== 0) {
+        throw new InkMcpError("INVALID_INPUT", "V path endpoints cannot move horizontally without converting the command.", {
+          segmentIndex: edit.segmentIndex,
+          command: segment.cmd,
+          dx,
+        });
+      }
+      segment.y += dy;
+      return;
+    }
+    if (!("x" in segment) || !("y" in segment)) {
       throw new InkMcpError("INVALID_INPUT", "Selected path segment has no endpoint.", {
         segmentIndex: edit.segmentIndex,
         command: segment.cmd,
@@ -669,7 +723,7 @@ function setPathPointFromTarget(
     ? { x: target.x - point.base.x, y: target.y - point.base.y }
     : target;
 
-  assignPathPoint(segment, edit.point, nextPoint);
+  assignPathPoint(segment, edit.point, nextPoint, point);
 }
 
 function currentEditablePoint(
@@ -715,6 +769,20 @@ function editableSegmentBase(segments: EditablePathSegment[], segmentIndex: numb
           subpathStart = current;
         }
         break;
+      case "H":
+      case "h":
+        current = {
+          x: relative ? current.x + segment.x : segment.x,
+          y: current.y,
+        };
+        break;
+      case "V":
+      case "v":
+        current = {
+          x: current.x,
+          y: relative ? current.y + segment.y : segment.y,
+        };
+        break;
       case "C":
       case "c":
       case "Q":
@@ -735,9 +803,34 @@ function assignPathPoint(
   segment: EditablePathSegment,
   point: EditablePathPoint,
   value: { x: number; y: number },
+  context: { base: { x: number; y: number }; relative: boolean },
 ): void {
   if (point === "end") {
-    if (!("x" in segment)) {
+    if (segment.cmd === "H" || segment.cmd === "h") {
+      const representedY = context.relative ? 0 : context.base.y;
+      if (!samePathCoordinate(value.y, representedY)) {
+        throw new InkMcpError("INVALID_INPUT", "H path endpoints cannot change y without converting the command.", {
+          command: segment.cmd,
+          y: value.y,
+          representedY,
+        });
+      }
+      segment.x = value.x;
+      return;
+    }
+    if (segment.cmd === "V" || segment.cmd === "v") {
+      const representedX = context.relative ? 0 : context.base.x;
+      if (!samePathCoordinate(value.x, representedX)) {
+        throw new InkMcpError("INVALID_INPUT", "V path endpoints cannot change x without converting the command.", {
+          command: segment.cmd,
+          x: value.x,
+          representedX,
+        });
+      }
+      segment.y = value.y;
+      return;
+    }
+    if (!("x" in segment) || !("y" in segment)) {
       throw new InkMcpError("INVALID_INPUT", "Selected path segment has no endpoint.", {
         command: segment.cmd,
       });
@@ -767,6 +860,10 @@ function assignPathPoint(
   segment.y2 = value.y;
 }
 
+function samePathCoordinate(left: number, right: number): boolean {
+  return Math.abs(left - right) <= 1e-9;
+}
+
 function isRelativeCommand(command: EditablePathSegment["cmd"]): boolean {
   if (command === "Z" || command === "z") return false;
   return command === command.toLowerCase() && command !== command.toUpperCase();
@@ -782,6 +879,10 @@ function availablePathPoints(segment: EditablePathSegment): EditablePathPoint[] 
     case "m":
     case "L":
     case "l":
+    case "H":
+    case "h":
+    case "V":
+    case "v":
       return ["end"];
     case "C":
     case "c":

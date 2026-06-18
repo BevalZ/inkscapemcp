@@ -242,10 +242,19 @@ export async function validatePathDataTool(input: z.infer<typeof validatePathDat
 
 export async function editPathNodes(input: z.infer<typeof editPathNodesSchema>, ctx: ToolContext) {
   await prePullBeforeCurrentStateWrite(ctx, input.docId, "edit_path_nodes");
-  const write = await ctx.workspace.writeSvgWithSnapshot(input.docId, "edit_path_nodes", (currentSvg) => {
-    const result = editPathNodesInSvg(currentSvg, input);
-    return { svg: result.svg, result: result.result };
-  });
+  const write = await ctx.workspace.writeSvgWithSnapshot(
+    input.docId,
+    "edit_path_nodes",
+    (currentSvg) => {
+      const result = editPathNodesInSvg(currentSvg, input);
+      return { svg: result.svg, result: result.result };
+    },
+    {
+      beforeSnapshot: (currentSvg) => {
+        editPathNodesInSvg(currentSvg, input);
+      },
+    },
+  );
   await appendOperationLog(write.paths, {
     level: "info",
     docId: input.docId,

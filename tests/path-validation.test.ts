@@ -107,10 +107,18 @@ describe("path tool validation", () => {
       editPathNodesSchema.parse({
         docId: "path-doc",
         elementId: "line",
-        edits: [{ type: "move_point", segmentIndex: 1, point: "c1", dx: 2 }],
+        edits: [
+          { type: "move_point", segmentIndex: 1, point: "c1", dx: 2 },
+          { type: "set_point_absolute", segmentIndex: 1, point: "end", x: 10, y: 11 },
+          { type: "set_point_relative", segmentIndex: 2, point: "end", x: 3, y: 4 },
+        ],
       }),
     ).toMatchObject({
-      edits: [{ type: "move_point", segmentIndex: 1, point: "c1", dx: 2, dy: 0 }],
+      edits: [
+        { type: "move_point", segmentIndex: 1, point: "c1", dx: 2, dy: 0 },
+        { type: "set_point_absolute", segmentIndex: 1, point: "end", x: 10, y: 11 },
+        { type: "set_point_relative", segmentIndex: 2, point: "end", x: 3, y: 4 },
+      ],
     });
 
     expect(() =>
@@ -474,14 +482,14 @@ describe("path tool validation", () => {
         elementId: "line",
         pointSelector: {
           type: "command",
-          commands: ["C", "q"],
+          commands: ["C", "q", "H", "v"],
         },
         transform: { type: "translate", dx: 2 },
       }),
     ).toMatchObject({
       pointSelector: {
         type: "command",
-        commands: ["C", "q"],
+        commands: ["C", "q", "H", "v"],
         pointTypes: ["end", "c1", "c2"],
       },
     });

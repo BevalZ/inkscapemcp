@@ -317,6 +317,82 @@ describe("element tools", () => {
     });
   });
 
+  it("edits representable H/V endpoints with direct active-window attribute sync", async () => {
+    await workspace.createDocument(
+      "axis-doc",
+      "Axis doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="axis" d="M10 10 H20 v8 h-5 V12" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await editPathNodes(
+      {
+        docId: "axis-doc",
+        elementId: "axis",
+        edits: [
+          { type: "move_point", segmentIndex: 1, point: "end", dx: 3, dy: 0 },
+          { type: "set_point_absolute", segmentIndex: 2, point: "end", x: 23, y: 20 },
+        ],
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "axis", attributeName: "d", value: "M10 10 H23 v10 h-5 V12" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "axis",
+      editCount: 2,
+      changed: { d: { from: "M10 10 H20 v8 h-5 V12", to: "M10 10 H23 v10 h-5 V12" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("axis-doc")).resolves.toContain('d="M10 10 H23 v10 h-5 V12"');
+    const history = await workspace.listHistory("axis-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("edit_path_nodes");
+  });
+
+  it("rejects non-representable H/V exact node sets without writing history", async () => {
+    await workspace.createDocument(
+      "axis-doc",
+      "Axis doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="axis" d="M10 10 H20 v8" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      editPathNodes(
+        {
+          docId: "axis-doc",
+          elementId: "axis",
+          edits: [{ type: "set_point_absolute", segmentIndex: 2, point: "end", x: 19, y: 20 }],
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("V path endpoints cannot change x");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("axis-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("axis-doc")).resolves.toContain('d="M10 10 H20 v8"');
+  });
+
   it("transforms path points with direct active-window attribute sync", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
       binaryPath: "inkscape",
@@ -361,6 +437,59 @@ describe("element tools", () => {
     });
     await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30 c14 6 31 1 37 -7"');
     const history = await workspace.listHistory("sync-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
+  it("transforms representable H/V endpoints with direct active-window attribute sync", async () => {
+    await workspace.createDocument(
+      "axis-doc",
+      "Axis doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="axis" d="M10 10 H20 v8 h-5 V12" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "axis-doc",
+        elementId: "axis",
+        pointSelector: {
+          type: "command",
+          commands: ["H", "h"],
+        },
+        transform: { type: "translate", dx: -2, dy: 0 },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "axis", attributeName: "d", value: "M10 10 H18 v8 h-7 V12" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "axis",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 3, point: "end" },
+      ],
+      editedSegments: [1, 3],
+      changed: { d: { from: "M10 10 H20 v8 h-5 V12", to: "M10 10 H18 v8 h-7 V12" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("axis-doc")).resolves.toContain('d="M10 10 H18 v8 h-7 V12"');
+    const history = await workspace.listHistory("axis-doc");
     expect(history).toHaveLength(1);
     expect(history[0].snapshotId).toContain("transform_path_points");
   });
@@ -1117,6 +1246,65 @@ describe("element tools", () => {
     expect(companion).not.toHaveBeenCalled();
     await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
     await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
+  });
+
+  it("rejects non-representable H/V node edits without writing history", async () => {
+    await workspace.createDocument(
+      "axis-doc",
+      "Axis doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="axis" d="M10 10 H20 v8" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      editPathNodes(
+        {
+          docId: "axis-doc",
+          elementId: "axis",
+          edits: [{ type: "move_point", segmentIndex: 1, point: "end", dx: 0, dy: 1 }],
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("H path endpoints cannot move vertically");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("axis-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("axis-doc")).resolves.toContain('d="M10 10 H20 v8"');
+  });
+
+  it("rejects non-representable H/V point transforms without writing history", async () => {
+    await workspace.createDocument(
+      "axis-doc",
+      "Axis doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="axis" d="M10 10 H20 v8" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "axis-doc",
+          elementId: "axis",
+          pointSelector: { points: [{ segmentIndex: 2, point: "end" }] },
+          transform: { type: "set_absolute", points: [{ x: 19, y: 20 }] },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("V path endpoints cannot change x");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("axis-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("axis-doc")).resolves.toContain('d="M10 10 H20 v8"');
   });
 
   it("rejects invalid scale transforms without writing history", async () => {

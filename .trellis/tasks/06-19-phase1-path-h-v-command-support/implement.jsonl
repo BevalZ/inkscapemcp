@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality gates for path editing changes."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module boundaries for path-data core, SVG ops, tools, and tests."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Explicit INVALID_INPUT behavior for non-representable H/V edits."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Testing and TypeScript quality expectations for bounded path parser changes."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Write operation log contracts for path edit tools."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Snapshot-before-write boundaries for path edit tools."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Phase 1 path editing contracts and durable roadmap memory."}
+{"file": "docs/inkscape-mcp-plan.md", "reason": "Overall MCP server product and safety plan."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 Workstream 6 source requirements."}

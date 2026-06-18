@@ -241,6 +241,54 @@ describe("query_document semantic helpers", () => {
     await expect(workspace.listHistory("paths-doc")).resolves.toEqual([]);
   });
 
+  it("returns document-wide H/V path-node summaries", async () => {
+    await workspace.createDocument("axis-doc", "Axis", svgWithAxisPath());
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryDocument(
+      {
+        docId: "axis-doc",
+        responseMode: "standard",
+        includePathNodes: true,
+        pathNodeNormalize: "absolute",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "standard",
+      pathNodes: {
+        totalPathCount: 1,
+        describedPathCount: 1,
+        unsupportedPathCount: 0,
+        normalize: "absolute",
+        paths: [
+          {
+            elementId: "axis",
+            segmentCount: 5,
+            commandCounts: { M: 1, H: 1, v: 1, h: 1, V: 1 },
+            editablePointCount: 5,
+            normalizedPointCount: 5,
+            normalizedCommandPoints: { M: ["end"], H: ["end"], v: ["end"], h: ["end"], V: ["end"] },
+            normalizedSegments: [
+              { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+              { index: 1, cmd: "H", points: { end: { x: 20, y: 10 } } },
+              { index: 2, cmd: "v", points: { end: { x: 20, y: 18 } } },
+              { index: 3, cmd: "h", points: { end: { x: 15, y: 18 } } },
+              { index: 4, cmd: "V", points: { end: { x: 15, y: 12 } } },
+            ],
+          },
+        ],
+        warnings: [],
+      },
+    });
+    await expect(workspace.listHistory("axis-doc")).resolves.toEqual([]);
+  });
+
   it("returns standard path-node segment details for supported commands", async () => {
     await workspace.createDocument("paths-doc", "Paths", svgWithMixedPaths());
 
@@ -299,7 +347,7 @@ describe("query_document semantic helpers", () => {
           {
             code: "UNSUPPORTED_PATH_DATA",
             elementId: "arc",
-            message: "edit_path_nodes supports only M, L, C, Q, and Z path commands.",
+            message: "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.",
           },
         ],
       },
@@ -570,6 +618,13 @@ function svgWithMixedPaths(): string {
     <path id="relative-fin" d="M35 32 l12 8 l-18 2" fill="none" stroke="#111827"/>
     <path id="arc" d="M20 20 A5 5 0 0 1 30 30" fill="none" stroke="#111827"/>
   </g>
+</svg>`;
+}
+
+function svgWithAxisPath(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="60px" viewBox="0 0 100 60">
+  <path id="axis" d="M10 10 H20 v8 h-5 V12" fill="none" stroke="#111827"/>
 </svg>`;
 }
 

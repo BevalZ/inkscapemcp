@@ -190,6 +190,20 @@ const pathNodeEditSchema = z.discriminatedUnion("type", [
     dy: z.number().finite().default(0),
   }),
   z.object({
+    type: z.literal("set_point_absolute"),
+    segmentIndex: z.number().int().nonnegative(),
+    point: z.enum(["end", "c1", "c2"]),
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }),
+  z.object({
+    type: z.literal("set_point_relative"),
+    segmentIndex: z.number().int().nonnegative(),
+    point: z.enum(["end", "c1", "c2"]),
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }),
+  z.object({
     type: z.literal("insert_segment"),
     index: z.number().int().nonnegative(),
     segment: pathSegmentSchema,
@@ -286,7 +300,7 @@ const pathPointSegmentListSelectorSchema = z.object({
   }
 });
 
-const editablePathCommandSchema = z.enum(["M", "m", "L", "l", "C", "c", "Q", "q", "Z", "z"]);
+const editablePathCommandSchema = z.enum(["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "Z", "z"]);
 
 const pathPointCommandSelectorSchema = z.object({
   type: z.literal("command"),

@@ -117,24 +117,26 @@ describe("SVG operations", () => {
   });
 
   it("summarizes valid path data with editable point counts", () => {
-    const result = summarizePathDataValidation("M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z");
+    const result = summarizePathDataValidation("M10 10 H20 v5 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z");
 
     expect(result).toMatchObject({
       ok: true,
-      d: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z",
+      d: "M10 10 H20 v5 l5 1 c2 3 4 5 6 7 q1 -2 3 0 z",
       requireMoveTo: true,
-      segmentCount: 5,
-      commandCounts: { M: 1, l: 1, c: 1, q: 1, z: 1 },
+      segmentCount: 7,
+      commandCounts: { M: 1, H: 1, v: 1, l: 1, c: 1, q: 1, z: 1 },
       unsupportedCommandCount: 0,
-      relativeCommandCount: 3,
-      absoluteCommandCount: 2,
-      availablePointCount: 7,
+      relativeCommandCount: 4,
+      absoluteCommandCount: 3,
+      availablePointCount: 9,
       editablePointSummary: [
         { segmentIndex: 0, cmd: "M", relative: false, availablePoints: ["end"] },
-        { segmentIndex: 1, cmd: "l", relative: true, availablePoints: ["end"] },
-        { segmentIndex: 2, cmd: "c", relative: true, availablePoints: ["c1", "c2", "end"] },
-        { segmentIndex: 3, cmd: "q", relative: true, availablePoints: ["c1", "end"] },
-        { segmentIndex: 4, cmd: "z", relative: false, availablePoints: [] },
+        { segmentIndex: 1, cmd: "H", relative: false, availablePoints: ["end"] },
+        { segmentIndex: 2, cmd: "v", relative: true, availablePoints: ["end"] },
+        { segmentIndex: 3, cmd: "l", relative: true, availablePoints: ["end"] },
+        { segmentIndex: 4, cmd: "c", relative: true, availablePoints: ["c1", "c2", "end"] },
+        { segmentIndex: 5, cmd: "q", relative: true, availablePoints: ["c1", "end"] },
+        { segmentIndex: 6, cmd: "z", relative: false, availablePoints: [] },
       ],
     });
   });
@@ -162,7 +164,7 @@ describe("SVG operations", () => {
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        message: "edit_path_nodes supports only M, L, C, Q, and Z path commands.",
+        message: "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.",
         details: { command: "A" },
       },
     });
@@ -263,6 +265,54 @@ describe("SVG operations", () => {
     });
     expect(result.svg).toContain('id="editable-path"');
     expect(result.svg).toContain('d="M1 1 L2 2 L9.5 8 C13 2 4 4 3 8"');
+  });
+
+  it("edits representable H/V path endpoints while preserving command case", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "axis-path",
+      d: "M10 10 H20 v8 h-5 V12",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const moved = editPathNodesInSvg(svg, {
+      elementId: "axis-path",
+      edits: [
+        { type: "move_point", segmentIndex: 1, point: "end", dx: 3, dy: 0 },
+        { type: "move_point", segmentIndex: 2, point: "end", dx: 0, dy: 2 },
+        { type: "set_point_absolute", segmentIndex: 3, point: "end", x: 13, y: 20 },
+        { type: "set_point_relative", segmentIndex: 4, point: "end", x: 0, y: -6 },
+      ],
+    });
+
+    expect(moved.result).toEqual({
+      elementId: "axis-path",
+      previousD: "M10 10 H20 v8 h-5 V12",
+      nextD: "M10 10 H23 v10 h-10 V14",
+      editCount: 4,
+    });
+    expect(moved.svg).toContain('d="M10 10 H23 v10 h-10 V14"');
+  });
+
+  it("rejects non-representable H/V endpoint edits without converting commands", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "axis-path",
+      d: "M10 10 H20 v8",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      editPathNodesInSvg(svg, {
+        elementId: "axis-path",
+        edits: [{ type: "move_point", segmentIndex: 1, point: "end", dx: 0, dy: 1 }],
+      }),
+    ).toThrow("H path endpoints cannot move vertically");
+
+    expect(() =>
+      editPathNodesInSvg(svg, {
+        elementId: "axis-path",
+        edits: [{ type: "set_point_absolute", segmentIndex: 2, point: "end", x: 19, y: 18 }],
+      }),
+    ).toThrow("V path endpoints cannot change x");
   });
 
   it("translates explicit path points without replacing the path element", () => {
@@ -422,6 +472,107 @@ describe("SVG operations", () => {
       },
     });
     expect(result.svg).toContain('d="M10 10 l8 9 C22 24 21 21 29 31"');
+  });
+
+  it("transforms representable H/V endpoints while preserving command case", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "axis-path",
+      d: "M10 10 H20 v8 h-5 V12",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const translated = transformPathPointsInSvg(svg, {
+      elementId: "axis-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 3, point: "end" },
+        ],
+      },
+      transform: { type: "translate", dx: 3, dy: 0 },
+    });
+    expect(translated.result).toMatchObject({
+      nextD: "M10 10 H23 v8 h-2 V12",
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 3, point: "end" },
+      ],
+      editedSegments: [1, 3],
+    });
+
+    const setAbsolute = transformPathPointsInSvg(svg, {
+      elementId: "axis-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "end" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: {
+        type: "set_absolute",
+        points: [
+          { x: 24, y: 10 },
+          { x: 24, y: 21 },
+        ],
+      },
+    });
+    expect(setAbsolute.result.nextD).toBe("M10 10 H24 v11 h-5 V12");
+
+    const selectedByCommand = transformPathPointsInSvg(svg, {
+      elementId: "axis-path",
+      pointSelector: {
+        type: "command",
+        commands: ["H", "h"],
+      },
+      transform: { type: "translate", dx: -2, dy: 0 },
+    });
+    expect(selectedByCommand.result).toMatchObject({
+      nextD: "M10 10 H18 v8 h-7 V12",
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 3, point: "end" },
+      ],
+    });
+
+    const verticalSelectedByCommand = transformPathPointsInSvg(svg, {
+      elementId: "axis-path",
+      pointSelector: {
+        type: "command",
+        commands: ["v", "V"],
+      },
+      transform: { type: "translate", dx: 0, dy: 2 },
+    });
+    expect(verticalSelectedByCommand.result).toMatchObject({
+      nextD: "M10 10 H20 v10 h-5 V14",
+      selectedPoints: [
+        { segmentIndex: 2, point: "end" },
+        { segmentIndex: 4, point: "end" },
+      ],
+    });
+  });
+
+  it("rejects non-representable H/V point transforms without converting commands", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "axis-path",
+      d: "M10 10 H20 v8",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "axis-path",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: { type: "translate", dx: 0, dy: 1 },
+      }),
+    ).toThrow("H path endpoints cannot move vertically");
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "axis-path",
+        pointSelector: { points: [{ segmentIndex: 2, point: "end" }] },
+        transform: { type: "set_absolute", points: [{ x: 19, y: 20 }] },
+      }),
+    ).toThrow("V path endpoints cannot change x");
   });
 
   it("sets relative targets correctly even when selections are provided out of path order", () => {
@@ -1741,6 +1892,66 @@ describe("SVG operations", () => {
     });
   });
 
+  it("queries H/V path node segments with raw, absolute, and normalized points", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "axis-path",
+      d: "M10 10 H20 v8 h-5 V12",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = queryPathNodesInSvg(svg, { elementId: "axis-path", normalize: "relative" });
+
+    expect(result).toMatchObject({
+      elementId: "axis-path",
+      d: "M10 10 H20 v8 h-5 V12",
+      segmentCount: 5,
+      segments: [
+        {
+          index: 0,
+          cmd: "M",
+          basePoint: { x: 0, y: 0 },
+          points: { end: { x: 10, y: 10 } },
+          absolutePoints: { end: { x: 10, y: 10 } },
+        },
+        {
+          index: 1,
+          cmd: "H",
+          basePoint: { x: 10, y: 10 },
+          points: { end: { x: 20, y: 10 } },
+          absolutePoints: { end: { x: 20, y: 10 } },
+        },
+        {
+          index: 2,
+          cmd: "v",
+          basePoint: { x: 20, y: 10 },
+          points: { end: { x: 0, y: 8 } },
+          absolutePoints: { end: { x: 20, y: 18 } },
+        },
+        {
+          index: 3,
+          cmd: "h",
+          basePoint: { x: 20, y: 18 },
+          points: { end: { x: -5, y: 0 } },
+          absolutePoints: { end: { x: 15, y: 18 } },
+        },
+        {
+          index: 4,
+          cmd: "V",
+          basePoint: { x: 15, y: 18 },
+          points: { end: { x: 15, y: 12 } },
+          absolutePoints: { end: { x: 15, y: 12 } },
+        },
+      ],
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        { index: 1, cmd: "H", points: { end: { x: 10, y: 0 } } },
+        { index: 2, cmd: "v", points: { end: { x: 0, y: 8 } } },
+        { index: 3, cmd: "h", points: { end: { x: -5, y: 0 } } },
+        { index: 4, cmd: "V", points: { end: { x: 0, y: -6 } } },
+      ],
+    });
+  });
+
   it("returns an explicit absolute normalized path-node view when requested", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
@@ -1881,7 +2092,7 @@ describe("SVG operations", () => {
         elementId: "arc-path",
         edits: [{ type: "move_point", segmentIndex: 1, point: "end", dx: 1, dy: 0 }],
       }),
-    ).toThrow("supports only M, L, C, Q, and Z");
+    ).toThrow("supports only M, L, H, V, C, Q, and Z");
   });
 
   it("rejects point transforms for unsupported path commands", () => {
@@ -1897,6 +2108,6 @@ describe("SVG operations", () => {
         pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
         transform: { type: "translate", dx: 1, dy: 0 },
       }),
-    ).toThrow("supports only M, L, C, Q, and Z");
+    ).toThrow("supports only M, L, H, V, C, Q, and Z");
   });
 });

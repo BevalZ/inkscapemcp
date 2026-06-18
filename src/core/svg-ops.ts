@@ -872,7 +872,7 @@ function validatePathPointSegmentListSelector(selector: Extract<PathPointSelecto
 }
 
 function validatePathPointCommandSelector(selector: Extract<PathPointSelector, { type: "command" }>): void {
-  const allowedCommands = new Set(["M", "m", "L", "l", "C", "c", "Q", "q", "Z", "z"]);
+  const allowedCommands = new Set(["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "Z", "z"]);
   if (selector.commands.length === 0) {
     throw new InkMcpError("INVALID_INPUT", "Path point command selector must not be empty.");
   }
