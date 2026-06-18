@@ -102,7 +102,11 @@ Implemented explicit bidirectional GUI sync with connection identity, GUI pull a
 
 ### Main Changes
 
-(Add details)
+- Added `query_document({ includePathNodes: true })` with compact path counts and standard/full segment details.
+- Added `src/core/path-node-summary.ts` to reuse `describeEditablePathData` instead of creating a second parser.
+- Added per-path unsupported-data warnings so arc/shorthand/invalid paths do not fail the whole document query.
+- Documented the new option in `README.md` and durable Phase 1 roadmap memory.
+- Archived `.trellis/tasks/06-18-phase1-query-path-nodes-loop`.
 
 ### Git Commits
 
@@ -288,3 +292,41 @@ Implemented read-only snapshot diff inspection with compact/full responses, hist
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Phase 1 Query Path Nodes Loop
+
+**Date**: 2026-06-18
+**Task**: Phase 1 Query Path Nodes Loop
+**Branch**: `main`
+
+### Summary
+
+Completed Phase 1 Loop 4 by adding read-only query_document includePathNodes summaries, tests, README docs, roadmap memory, and task archive.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `840a2a4` | feat: add Phase 1 query path node summaries |
+| `ae24f1b` | chore(task): archive 06-18-phase1-query-path-nodes-loop |
+
+### Testing
+
+- [OK] `npm run typecheck`
+- [OK] `npm test` (21 files / 96 tests)
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Continue Phase 1 with the next recommended query/path reliability hardening loop.

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~282 | Active |
+| `journal-1.md` | ~324 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-06-18 | Phase 1 Query Path Nodes Loop | `840a2a4`, `ae24f1b` | `main` |
 | 8 | 2026-06-18 | Phase 1 Operation Diff Loop | `5143445` | `main` |
 | 7 | 2026-06-18 | Phase 1 Conflict Preview Loop | `9d4e4ec` | `main` |
 | 6 | 2026-06-18 | Roadmap debug hardening loops | `b5b8c5b` | `main` |
