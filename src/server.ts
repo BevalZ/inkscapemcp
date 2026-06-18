@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   addElementSchema,
   appendPathSegmentSchema,
+  applyOperationPreviewSchema,
   applySvgOperationsSchema,
   archiveDocumentSchema,
   connectInkscapeWindowSchema,
@@ -54,6 +55,7 @@ import { toErrorPayload } from "./core/errors.js";
 import { createToolContext, jsonResult, runTool } from "./tools/context.js";
 import {
   archiveDocument,
+  applyOperationPreview,
   createCheckpoint,
   createDocument,
   diffDocumentSnapshots,
@@ -390,6 +392,17 @@ export function createServer() {
       inputSchema: readOperationPreviewSchema,
     },
     (input) => runTool("read_operation_preview", () => readOperationPreview(input, ctx)),
+  );
+
+  server.registerTool(
+    "apply_operation_preview",
+    {
+      title: "Apply operation preview",
+      description:
+        "Apply a saved operation preview artifact after explicit confirmation and baseline validation. Snapshots, logs, writes diagnostics, and refreshes structurally.",
+      inputSchema: applyOperationPreviewSchema,
+    },
+    (input) => runTool("apply_operation_preview", () => applyOperationPreview(input, ctx)),
   );
 
   server.registerTool(

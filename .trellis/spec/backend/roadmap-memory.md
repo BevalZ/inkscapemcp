@@ -93,6 +93,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 7 established `preview_svg_operations` as a read-only dry-run surface for controlled `apply_svg_operations` batches. It uses current-state read pre-pull behavior, applies operations only in memory, reuses the shared SVG diff engine, returns compact or full structured diff output, and must not write `current.svg`, metadata, history, operation logs, operation-diff artifacts, or trigger Inkscape refresh. Future replay, operation-group, and saved-preview tools should build on this envelope instead of adding a parallel preview model.
 - Phase 1 loop 8 established `replay_operations` for deterministic controlled operation replay. Write mode requires an explicit `{ revision, contentHash }` baseline, pre-pulls active bidirectional GUI state before baseline comparison, rejects stale baselines before snapshot/write, rejects generated-id add operations, snapshots on success, writes operation diagnostics, logs a summary, and refreshes via the same attribute-sync or structural path as `apply_svg_operations`. Dry-run mode reuses the preview/diff envelope without workspace writes and may return stale-read warnings like other current-state read tools.
 - Phase 1 loop 9 established saved operation preview artifacts under `workspace/drawings/{docId}/operation-previews/`. `preview_svg_operations` and dry-run `replay_operations` may save candidate SVG plus JSON metadata/diff when `savePreview: true`, without mutating `current.svg`, document metadata, history, operation logs, operation-diff artifacts, or Inkscape GUI state. `list_operation_previews` returns compact metadata and `read_operation_preview` returns metadata plus full diff, with SVG content included only on request. Future apply-from-preview, operation groups, retention, and resource exposure should build on this artifact identity.
+- Phase 1 loop 10 established `apply_operation_preview` for explicitly applying saved operation preview artifacts. It requires `confirmApplyPreview: true`, accepts an explicit baseline or artifact baseline, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg` with the candidate SVG, writes operation-diff diagnostics, appends a compact operation log, and always uses structural companion-extension refresh instead of active-window attribute sync.
 
 ### 4. Validation & Error Matrix
 
@@ -168,6 +169,86 @@ await runAction({ docId, action: "path_simplify", elementIds });
 ```
 
 Only allowlisted action enum values may reach the Inkscape adapter.
+
+## Scenario: Saved Operation Preview Apply Contract
+
+### 1. Scope / Trigger
+
+- Trigger: applying a saved dry-run operation preview artifact to `workspace/drawings/{docId}/current.svg`.
+- Scope: `apply_operation_preview` and operation preview artifacts produced by `preview_svg_operations` or dry-run `replay_operations`.
+- Out of scope: operation groups, apply-all, preview retention/deletion, cross-document apply, applying unsaved preview payloads, arbitrary SVG replacement, and active-window attribute sync.
+
+### 2. Signatures
+
+- Tool: `apply_operation_preview({ docId, previewId, baseline?, confirmApplyPreview, responseMode? })`
+- `baseline`: `{ revision: number, contentHash: string }`
+- `responseMode`: `"compact" | "full"`, default `"compact"`
+
+### 3. Contracts
+
+- `confirmApplyPreview` must be `true` before any GUI pre-pull or write work begins.
+- The artifact must exist under the requested document's `operation-previews/` directory and its metadata `docId` / `previewId` must match the request.
+- The artifact must be a dry-run preview from `preview_svg_operations` or `replay_operations`.
+- Baseline selection is `explicit baseline` when supplied, otherwise `artifact baseline`.
+- If both explicit and artifact baselines exist, they must match each other and the current document metadata.
+- If neither baseline exists, reject rather than applying an unguarded preview.
+- Active bidirectional GUI state must be pre-pulled before comparing the selected baseline to current metadata.
+- Baseline rejection must happen before snapshot/write, including inside the write lock through a pre-snapshot guard.
+- Successful apply snapshots current SVG first, replaces `current.svg` with the candidate SVG, updates metadata, writes an operation-diff artifact, appends a compact operation log entry, and triggers structural companion-extension refresh.
+- Compact responses return summary counts plus added/removed/changed ids. Full responses include the structured diff.
+
+### 4. Validation & Error Matrix
+
+- Missing `confirmApplyPreview: true` -> `INVALID_INPUT`, no pre-pull and no write.
+- Unsafe or missing `previewId` -> `INVALID_INPUT` or `DOC_NOT_FOUND`, no write.
+- Artifact metadata `docId` / `previewId` mismatch -> `INVALID_INPUT`, no write.
+- Missing explicit and artifact baseline -> `INVALID_INPUT`, no write.
+- Explicit baseline differs from artifact baseline -> `INVALID_INPUT`, no write.
+- Selected baseline differs from current metadata after pre-pull -> `SYNC_CONFLICT`, no snapshot/write.
+- Companion extension refresh failure after a successful write -> warning only; keep `current.svg` authoritative.
+
+### 5. Good/Base/Bad Cases
+
+- Good: dry-run `replay_operations` saves a baseline-protected preview, then `apply_operation_preview` applies it with confirmation, snapshots, logs, writes diagnostics, and refreshes the GUI structurally.
+- Base: an older `preview_svg_operations` artifact has no baseline; callers may still apply it only by supplying an explicit current baseline.
+- Bad: applying a preview artifact by calling `replace_document_svg` or by passing the candidate SVG through an unguarded raw write.
+- Bad: using active-window attribute sync for apply-preview, because the saved artifact is a candidate document replacement rather than a known set of existing-object attribute updates.
+
+### 6. Tests Required
+
+- Missing confirmation rejects before GUI pre-pull and leaves workspace state unchanged.
+- Unsafe or missing preview ids reject without workspace changes.
+- Unguarded preview artifacts reject unless an explicit baseline is supplied.
+- Explicit baseline and artifact baseline mismatch rejects.
+- Stale current metadata rejects before snapshot/write.
+- Successful compact apply snapshots, writes `current.svg`, updates metadata, writes operation-diff diagnostics, logs `apply_operation_preview`, triggers companion refresh, and omits full diff arrays.
+- Full mode includes the structured diff from the shared diff engine.
+- Active bidirectional GUI state is pre-pulled before baseline comparison.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replaceDocumentSvg({
+  docId,
+  svg: previewArtifact.svg,
+  confirmFullDocumentReplacement: true,
+});
+```
+
+#### Correct
+
+```typescript
+await applyOperationPreview({
+  docId,
+  previewId,
+  confirmApplyPreview: true,
+  baseline: { revision, contentHash },
+});
+```
+
+Use the apply-preview tool so artifact identity, bidirectional pre-pull, stale baseline rejection, snapshot-first write, operation diagnostics, and structural refresh all run through one guarded path.
 
 ## Phase Summary
 

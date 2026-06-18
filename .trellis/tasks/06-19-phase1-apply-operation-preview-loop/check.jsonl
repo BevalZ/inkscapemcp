@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for apply-preview quality checks."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify confirmation, stale baseline, and missing artifact failures leave state unchanged."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify schema, snapshot-first write, tests, and forbidden patterns."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify successful apply-preview logs summary only."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify filesystem persistence and metadata/snapshot behavior."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Verify durable apply-preview contract is documented consistently."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify existing preview/diff/write helpers were reused."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify schema/tool/docs/tests stay consistent."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Verify apply-preview scope matches Phase 1 roadmap."}
+{"file": "docs/roadmap/debug-hardening-phase-1.md", "reason": "Verify hardening loop evidence and boundaries."}

@@ -21,6 +21,7 @@ import { applyOperationsToSvg, type SvgOperation } from "../core/svg-ops.js";
 import { parseFullSvg } from "../core/validation.js";
 import {
   archiveDocumentSchema,
+  applyOperationPreviewSchema,
   createCheckpointSchema,
   createDocumentSchema,
   diffDocumentSnapshotsSchema,
@@ -320,6 +321,43 @@ function verifyReplayBaseline(
   return baseline;
 }
 
+function verifyApplyPreviewBaseline(
+  explicitBaseline: { revision: number; contentHash: string } | undefined,
+  artifactBaseline: { revision: number; contentHash: string } | undefined,
+  current: { revision: number; contentHash: string },
+): { revision: number; contentHash: string } {
+  if (explicitBaseline && artifactBaseline && !sameBaseline(explicitBaseline, artifactBaseline)) {
+    throw new InkMcpError("INVALID_INPUT", "Explicit baseline does not match the operation preview artifact baseline.", {
+      explicitBaseline,
+      artifactBaseline,
+    });
+  }
+
+  const baseline = explicitBaseline ?? artifactBaseline;
+  if (!baseline) {
+    throw new InkMcpError("INVALID_INPUT", "apply_operation_preview requires a baseline because the preview artifact is unguarded.", {
+      required: ["baseline.revision", "baseline.contentHash"],
+    });
+  }
+  if (!sameBaseline(baseline, current)) {
+    throw new InkMcpError("SYNC_CONFLICT", "Apply-preview baseline does not match the current document state.", {
+      baseline,
+      current: {
+        revision: current.revision,
+        contentHash: current.contentHash,
+      },
+    });
+  }
+  return baseline;
+}
+
+function sameBaseline(
+  left: { revision: number; contentHash: string },
+  right: { revision: number; contentHash: string },
+): boolean {
+  return left.revision === right.revision && left.contentHash === right.contentHash;
+}
+
 function assertDeterministicReplayOperations(operations: SvgOperation[]): void {
   const generatedIdOperations = operations
     .map((operation, index) => ({ operation, index }))
@@ -565,6 +603,83 @@ export async function readOperationPreview(input: z.infer<typeof readOperationPr
     diff: metadata.diff,
     ...(input.includeSvg ? { svg: artifact.svg } : {}),
   };
+}
+
+export async function applyOperationPreview(input: z.infer<typeof applyOperationPreviewSchema>, ctx: ToolContext) {
+  if (!input.confirmApplyPreview) {
+    throw new InkMcpError("INVALID_INPUT", "apply_operation_preview requires confirmApplyPreview: true.", {
+      requiredFlag: "confirmApplyPreview",
+    });
+  }
+
+  const artifact = await ctx.workspace.readOperationPreview(input.docId, input.previewId);
+  if (
+    artifact.metadata.dryRun !== true ||
+    !["preview_svg_operations", "replay_operations"].includes(artifact.metadata.toolName)
+  ) {
+    throw new InkMcpError("INVALID_INPUT", "Operation preview artifact is not an applyable dry-run preview.", {
+      previewId: input.previewId,
+      toolName: artifact.metadata.toolName,
+      dryRun: artifact.metadata.dryRun,
+    });
+  }
+
+  await prePullBeforeCurrentStateWrite(ctx, input.docId, "apply_operation_preview");
+  const currentMetadata = await ctx.workspace.readMetadata(input.docId);
+  const baseline = verifyApplyPreviewBaseline(input.baseline, artifact.metadata.baseline, currentMetadata);
+  const write = await ctx.workspace.writeSvgWithSnapshot(
+    input.docId,
+    "apply_operation_preview",
+    (currentSvg) => {
+      const diff = diffSvgDocuments(currentSvg, artifact.svg);
+      return { svg: artifact.svg, result: { diff } };
+    },
+    {
+      beforeSnapshot: async () => {
+        const metadata = await ctx.workspace.readMetadata(input.docId);
+        verifyApplyPreviewBaseline(input.baseline, artifact.metadata.baseline, metadata);
+      },
+    },
+  );
+  await appendOperationLog(write.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "apply_operation_preview",
+    inputSummary: {
+      previewId: artifact.metadata.previewId,
+      previewToolName: artifact.metadata.toolName,
+      operationCount: artifact.metadata.operationCount,
+      baselineRevision: baseline.revision,
+    },
+    snapshotPath: write.snapshotPath,
+    status: "ok",
+  });
+  const refresh = await tryAutoRefreshInInkscape(ctx, write.paths);
+  const compact = {
+    ok: true,
+    docId: input.docId,
+    previewId: artifact.metadata.previewId,
+    responseMode: "compact" as const,
+    applied: true,
+    previewToolName: artifact.metadata.toolName,
+    operationCount: artifact.metadata.operationCount,
+    baseline,
+    summary: write.result.diff.summary,
+    addedElementIds: write.result.diff.addedElementIds,
+    removedElementIds: write.result.diff.removedElementIds,
+    changedElementIds: write.result.diff.changedElementIds,
+    snapshotPath: write.snapshotPath,
+    currentSvgPath: write.paths.currentSvg,
+  };
+  const payload =
+    input.responseMode === "full"
+      ? {
+          ...compact,
+          responseMode: "full" as const,
+          diff: write.result.diff,
+        }
+      : compact;
+  return withGuiRefreshResult(withWriteDiagnostics(payload, write), refresh);
 }
 
 export async function diffDocumentSnapshots(input: z.infer<typeof diffDocumentSnapshotsSchema>, ctx: ToolContext) {

@@ -266,6 +266,14 @@ export const readOperationPreviewSchema = z.object({
   includeSvg: z.boolean().default(false),
 });
 
+export const applyOperationPreviewSchema = z.object({
+  docId: docIdSchema,
+  previewId: z.string().min(1),
+  baseline: operationReplayBaselineSchema.optional(),
+  confirmApplyPreview: z.boolean().default(false),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
+});
+
 export const insertSvgFragmentSchema = z.object({
   docId: docIdSchema,
   parentId: z.string().optional(),
