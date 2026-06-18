@@ -1304,3 +1304,36 @@ Added Phase 1 skew transform support to transform_path_points with schema, core 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Path Point Reflect-Line Transform
+
+**Date**: 2026-06-19
+**Task**: Path Point Reflect-Line Transform
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 arbitrary-line reflection support to transform_path_points with validation, core geometry, tool-level sync tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `afab586` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
