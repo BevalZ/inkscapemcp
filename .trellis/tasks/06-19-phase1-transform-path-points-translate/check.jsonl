@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Quality gate requires workspace confinement, snapshot-first writes, explicit Inkscape behavior, and tests."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Checked new schema, core mutation, and tool behavior against backend quality rules."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Checked invalid transform and path selection failures leave current.svg unchanged."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Checked successful tool writes append compact operation log summaries."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Checked new contract was captured as Phase 1 loop 17 with signatures, validation, and tests."}

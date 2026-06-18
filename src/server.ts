@@ -52,6 +52,7 @@ import {
   runActionSchema,
   startGuiSyncPollingSchema,
   stopGuiSyncPollingSchema,
+  transformPathPointsSchema,
   updateElementSchema,
   vectorizeBitmapSchema,
 } from "./core/validation.js";
@@ -88,6 +89,7 @@ import {
   queryPathNodes,
   replaceAttributeValues,
   replacePathData,
+  transformPathPoints,
   updateElement,
 } from "./tools/elements.js";
 import {
@@ -314,6 +316,17 @@ export function createServer() {
       inputSchema: editPathNodesSchema,
     },
     (input) => runTool("edit_path_nodes", () => editPathNodes(input, ctx)),
+  );
+
+  server.registerTool(
+    "transform_path_points",
+    {
+      title: "Transform path points",
+      description:
+        "Translate explicit endpoint/control-point selections on one existing path while preserving the path element.",
+      inputSchema: transformPathPointsSchema,
+    },
+    (input) => runTool("transform_path_points", () => transformPathPoints(input, ctx)),
   );
 
   server.registerTool(

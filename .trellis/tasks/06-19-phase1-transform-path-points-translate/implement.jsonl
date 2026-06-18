@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/06-19-phase1-transform-path-points-translate/prd.md", "reason": "Task requirements and acceptance criteria for the bounded transform_path_points translate slice."}
+{"file": "docs/inkscape-mcp-plan.md", "reason": "Project runtime, workspace, snapshot, and same-window refresh boundaries."}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and quality check entry point."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required backend patterns for schemas, core mutations, snapshots, and tests."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed error and no-write-on-validation-failure contracts."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Compact operation log requirements for write tools."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable Phase 1 path editing and same-window sync contracts."}

@@ -201,6 +201,47 @@ export const editPathNodesSchema = z.object({
   edits: z.array(pathNodeEditSchema).min(1),
 });
 
+const pathPointSelectionSchema = z.object({
+  segmentIndex: z.number().int().nonnegative(),
+  point: z.enum(["end", "c1", "c2"]),
+});
+
+export const transformPathPointsSchema = z.object({
+  docId: docIdSchema,
+  elementId: elementIdSchema,
+  pointSelector: z.object({
+    points: z.array(pathPointSelectionSchema).min(1),
+  }).superRefine((selector, ctx) => {
+    const seen = new Set<string>();
+    for (const point of selector.points) {
+      const key = `${point.segmentIndex}:${point.point}`;
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Path point selection must not contain duplicates.",
+          path: ["points"],
+        });
+      }
+      seen.add(key);
+    }
+  }),
+  transform: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("translate"),
+      dx: z.number().finite().default(0),
+      dy: z.number().finite().default(0),
+    }),
+  ]).superRefine((transform, ctx) => {
+    if (transform.dx === 0 && transform.dy === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Translate transform must move at least one axis.",
+        path: ["dx"],
+      });
+    }
+  }),
+});
+
 export const queryPathNodesSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,

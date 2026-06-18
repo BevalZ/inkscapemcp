@@ -14,6 +14,7 @@ import {
   nudgePathElement,
   queryPathNodes,
   replacePathData,
+  transformPathPoints,
   updateElement,
 } from "../src/tools/elements.js";
 
@@ -313,6 +314,74 @@ describe("element tools", () => {
       changed: { d: { from: "M100 30c18 4 31 1 41-9", to: "M90 32 c18 4 31 1 36 -8" } },
       guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
     });
+  });
+
+  it("transforms path points with direct active-window attribute sync", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "c1" },
+            { segmentIndex: 1, point: "end" },
+          ],
+        },
+        transform: { type: "translate", dx: -4, dy: 2 },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "mouth", attributeName: "d", value: "M100 30 c14 6 31 1 37 -7" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "mouth",
+      selectedPointCount: 2,
+      editedSegments: [1],
+      selectedPoints: [
+        { segmentIndex: 1, point: "c1" },
+        { segmentIndex: 1, point: "end" },
+      ],
+      transform: { type: "translate", dx: -4, dy: 2 },
+      changed: { d: { from: "M100 30c18 4 31 1 41-9", to: "M100 30 c14 6 31 1 37 -7" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30 c14 6 31 1 37 -7"');
+    const history = await workspace.listHistory("sync-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
+  it("rejects invalid point transforms without writing history", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "sync-doc",
+          elementId: "mouth",
+          pointSelector: { points: [{ segmentIndex: 12, point: "end" }] },
+          transform: { type: "translate", dx: -4, dy: 2 },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("out of range");
+
+    expect(sync).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
   });
 
   it("queries path nodes without writing or refreshing the Inkscape window", async () => {

@@ -5,6 +5,7 @@ import {
   applyPathNodeEdits,
   describeEditablePathData,
   pathDataFromInput,
+  type EditablePathPoint,
   type EditablePathSegmentInfo,
   type PathNodeEdit,
   type PathSegment,
@@ -99,6 +100,22 @@ export interface NormalizedPathSegmentInfo {
   relative: boolean;
   availablePoints: EditablePathSegmentInfo["availablePoints"];
   points: EditablePathSegmentInfo["absolutePoints"];
+}
+
+export interface PathPointSelection {
+  segmentIndex: number;
+  point: EditablePathPoint;
+}
+
+export interface TransformPathPointsResult extends PathDataEditResult {
+  selectedPointCount: number;
+  selectedPoints: PathPointSelection[];
+  editedSegments: number[];
+  transform: {
+    type: "translate";
+    dx: number;
+    dy: number;
+  };
 }
 
 export function addElementToSvg(
@@ -261,6 +278,50 @@ export function editPathNodesInSvg(
   return {
     svg: serializeSvg(document),
     result: { elementId: input.elementId, previousD, nextD, editCount: input.edits.length },
+  };
+}
+
+export function transformPathPointsInSvg(
+  svg: string,
+  input: {
+    elementId: string;
+    pointSelector: {
+      points: PathPointSelection[];
+    };
+    transform: {
+      type: "translate";
+      dx: number;
+      dy: number;
+    };
+  },
+): { svg: string; result: TransformPathPointsResult } {
+  validateTransformPathPointsInput(input);
+  const document = parseSvgDocument(svg);
+  const element = findPathElement(document, input.elementId);
+  const previousD = element.getAttribute("d");
+  if (!previousD) {
+    throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
+  }
+  const edits: PathNodeEdit[] = input.pointSelector.points.map((point) => ({
+    type: "move_point",
+    segmentIndex: point.segmentIndex,
+    point: point.point,
+    dx: input.transform.dx,
+    dy: input.transform.dy,
+  }));
+  const nextD = applyPathNodeEdits(previousD, edits);
+  element.setAttribute("d", nextD);
+  return {
+    svg: serializeSvg(document),
+    result: {
+      elementId: input.elementId,
+      previousD,
+      nextD,
+      selectedPointCount: input.pointSelector.points.length,
+      selectedPoints: input.pointSelector.points,
+      editedSegments: [...new Set(input.pointSelector.points.map((point) => point.segmentIndex))],
+      transform: input.transform,
+    },
   };
 }
 
@@ -510,6 +571,35 @@ function findPathElement(document: XmlDocument, elementId: string): XmlElement {
     throw new InkMcpError("INVALID_INPUT", "Path data edits require a path element.", { elementId });
   }
   return element;
+}
+
+function validateTransformPathPointsInput(input: {
+  pointSelector: { points: PathPointSelection[] };
+  transform: { type: "translate"; dx: number; dy: number };
+}): void {
+  if (input.pointSelector.points.length === 0) {
+    throw new InkMcpError("INVALID_INPUT", "Path point selection must not be empty.");
+  }
+  if (!Number.isFinite(input.transform.dx) || !Number.isFinite(input.transform.dy)) {
+    throw new InkMcpError("INVALID_INPUT", "Translate transform deltas must be finite.", {
+      dx: input.transform.dx,
+      dy: input.transform.dy,
+    });
+  }
+  if (input.transform.dx === 0 && input.transform.dy === 0) {
+    throw new InkMcpError("INVALID_INPUT", "Translate transform must move at least one axis.");
+  }
+  const selectedPoints = new Set<string>();
+  for (const point of input.pointSelector.points) {
+    const key = `${point.segmentIndex}:${point.point}`;
+    if (selectedPoints.has(key)) {
+      throw new InkMcpError("INVALID_INPUT", "Path point selection must not contain duplicates.", {
+        segmentIndex: point.segmentIndex,
+        point: point.point,
+      });
+    }
+    selectedPoints.add(key);
+  }
 }
 
 function applyAttributes(element: XmlElement, attributes: AttributeMap, options: { skipId: boolean }): void {

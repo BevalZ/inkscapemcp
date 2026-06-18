@@ -100,6 +100,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 14 established `query_document({ includeResolvedStyle: true })` as a read-only effective SVG style summary. It resolves presentation attributes plus inline `style` declarations with inheritance and local override source tracking, supports compact and standard/full response modes, and reports unsupported stylesheet cascade, CSS variables, and `!important` as limitations instead of pretending to compute renderer CSS.
 - Phase 1 loop 15 established `query_path_nodes({ normalize: "absolute" })` as an explicit read-only normalized path-node view. The default remains `normalize: "none"` for compatibility; absolute mode adds normalized segment point data derived from the existing path parser without rewriting SVG or changing edit semantics. Future document-wide normalized path summaries and edit-side normalization should reuse this contract.
 - Phase 1 loop 16 established `query_document({ includePathNodes: true, pathNodeNormalize: "absolute" })` as the document-wide counterpart to the single-path normalized query. The default remains `pathNodeNormalize: "none"`; absolute mode adds token-conscious compact normalized summaries and full normalized segment point details without mutating SVG or changing unsupported-path warning behavior.
+- Phase 1 loop 17 established `transform_path_points` as the first bounded transform-side path editing primitive. It translates explicit `end`/`c1`/`c2` selections on one existing path, rejects empty, duplicate, non-finite, zero, unavailable, or out-of-range point edits before writing, snapshots only after validation succeeds, logs and writes operation diagnostics, and uses direct active-window `d` attribute sync.
 
 ### 4. Validation & Error Matrix
 
@@ -698,6 +699,93 @@ const result = await queryDocument({
 ```
 
 Keep document-wide normalization as an inspection surface. Mutation must remain in explicit path-edit tools with their own confirmation and refresh contracts.
+
+## Scenario: Transform Path Points Translate Contract
+
+### 1. Scope / Trigger
+
+- Trigger: translating selected path points after inspecting path nodes through `query_path_nodes` or `query_document({ includePathNodes: true })`.
+- Scope: `transform_path_points` for one existing path element in one workspace document.
+- Out of scope: rotation, scaling, matrices, geometry selectors, multi-path transforms, new segment creation, path deletion, and unsupported SVG path commands.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- `pointSelector`: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- `transform`: `{ type: "translate", dx?: number, dy?: number }`
+- Response includes `selectedPointCount`, `selectedPoints`, `editedSegments`, `transform`, and `changed.d.from` / `changed.d.to`.
+
+### 3. Contracts
+
+- The tool mutates only the target path element's `d` attribute and preserves the element id and object tree.
+- Callers must select explicit segment indexes and point names; hidden global selection state is not used.
+- Supported point names are exactly `end`, `c1`, and `c2`.
+- Translation defaults omitted `dx` or `dy` to `0`, but at least one axis must be non-zero.
+- Duplicate selected points are rejected rather than moved twice.
+- Existing parser support remains `M`, `L`, `C`, `Q`, and `Z`, including relative variants.
+- Active bidirectional GUI state must be pre-pulled before current-state write validation.
+- Segment range, point availability, unsupported path data, and transform validation must fail before snapshot/write.
+- Successful writes snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+- Direct active-window sync failures are warnings only; the workspace SVG remains authoritative.
+
+### 4. Validation & Error Matrix
+
+- Empty `pointSelector.points` -> schema validation failure, no pre-pull or write.
+- Duplicate `{ segmentIndex, point }` selections -> `INVALID_INPUT` or schema validation failure, no snapshot/write.
+- Unsupported `transform.type` -> schema validation failure.
+- Non-finite `dx` or `dy` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- `dx: 0` and `dy: 0` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Segment index out of range -> `INVALID_INPUT`, no snapshot/write.
+- Point unavailable for the selected command, such as `c2` on `Q` -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: query a fish mouth path, then move the selected curve endpoint and first control point left by `dx: -2` in one call.
+- Good: move endpoint selections across multiple segments by the same translate transform while returning one previous/next `d` pair.
+- Base: caller needs rotation or scale; reject as out of scope until a later transform PRD defines the contract.
+- Bad: selecting the same `{ segmentIndex, point }` twice and silently applying the translation twice.
+- Bad: replacing the whole SVG document to move one curve handle.
+
+### 6. Tests Required
+
+- Schema tests accept valid translate payloads, default omitted axes to `0`, and reject empty, duplicate, zero, non-finite, or unsupported-transform inputs.
+- Core tests prove multiple selected endpoints/control points translate through the existing path parser and only the target path's `d` changes.
+- Core tests reject duplicate selections and unsupported path commands.
+- Tool-level tests prove successful calls snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync rather than companion structural refresh.
+- Tool-level tests prove invalid segment indexes or unavailable points leave `current.svg` and history unchanged.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replaceDocumentSvg({
+  docId,
+  svg: regeneratedSvg,
+  confirmFullDocumentReplacement: true,
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: {
+    points: [
+      { segmentIndex: 1, point: "c1" },
+      { segmentIndex: 1, point: "end" },
+    ],
+  },
+  transform: { type: "translate", dx: -2, dy: 1 },
+});
+```
+
+Use the transform tool for explicit point movement so bidirectional pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
 ## Phase Summary
 

@@ -11,6 +11,7 @@ import {
   queryPathNodesInSvg,
   replaceAttributeValuesInSvg,
   replacePathDataInSvg,
+  transformPathPointsInSvg,
 } from "../src/core/svg-ops.js";
 
 describe("SVG operations", () => {
@@ -203,6 +204,61 @@ describe("SVG operations", () => {
     expect(result.svg).toContain('d="M1 1 L2 2 L9.5 8 C13 2 4 4 3 8"');
   });
 
+  it("translates explicit path points without replacing the path element", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2 C3 3 4 4 5 5",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        points: [
+          { segmentIndex: 2, point: "c1" },
+          { segmentIndex: 2, point: "end" },
+        ],
+      },
+      transform: { type: "translate", dx: 10, dy: -1 },
+    });
+
+    expect(result.result).toEqual({
+      elementId: "editable-path",
+      previousD: "M1 1 L2 2 C3 3 4 4 5 5",
+      nextD: "M1 1 L2 2 C13 2 4 4 15 4",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 2, point: "c1" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [2],
+      transform: { type: "translate", dx: 10, dy: -1 },
+    });
+    expect(result.svg).toContain('id="editable-path"');
+    expect(result.svg).toContain('d="M1 1 L2 2 C13 2 4 4 15 4"');
+  });
+
+  it("rejects duplicate point transforms before editing path data", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "end" },
+            { segmentIndex: 1, point: "end" },
+          ],
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("duplicates");
+  });
+
   it("queries path node segments with raw and absolute points", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",
@@ -336,6 +392,22 @@ describe("SVG operations", () => {
       editPathNodesInSvg(svg, {
         elementId: "arc-path",
         edits: [{ type: "move_point", segmentIndex: 1, point: "end", dx: 1, dy: 0 }],
+      }),
+    ).toThrow("supports only M, L, C, Q, and Z");
+  });
+
+  it("rejects point transforms for unsupported path commands", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "arc-path",
+      d: "M1 1 A5 5 0 0 1 10 10",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "arc-path",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: { type: "translate", dx: 1, dy: 0 },
       }),
     ).toThrow("supports only M, L, C, Q, and Z");
   });

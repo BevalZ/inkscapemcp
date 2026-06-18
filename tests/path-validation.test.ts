@@ -6,6 +6,7 @@ import {
   editPathNodesSchema,
   queryPathNodesSchema,
   replacePathDataSchema,
+  transformPathPointsSchema,
 } from "../src/core/validation.js";
 
 describe("path tool validation", () => {
@@ -99,5 +100,61 @@ describe("path tool validation", () => {
         normalize: "relative",
       }),
     ).toThrow();
+  });
+
+  it("accepts translate point transforms and rejects empty, duplicate, or zero transforms", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "c1" },
+            { segmentIndex: 1, point: "end" },
+          ],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        points: [
+          { segmentIndex: 1, point: "c1" },
+          { segmentIndex: 1, point: "end" },
+        ],
+      },
+      transform: { type: "translate", dx: 2, dy: 0 },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [] },
+        transform: { type: "translate", dx: 1 },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          points: [
+            { segmentIndex: 1, point: "end" },
+            { segmentIndex: 1, point: "end" },
+          ],
+        },
+        transform: { type: "translate", dx: 1 },
+      }),
+    ).toThrow("duplicates");
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        transform: { type: "translate" },
+      }),
+    ).toThrow("at least one axis");
   });
 });

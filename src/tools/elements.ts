@@ -12,6 +12,7 @@ import {
   queryPathNodesInSvg,
   replacePathDataInSvg,
   replaceAttributeValuesInSvg,
+  transformPathPointsInSvg,
   updateElementInSvg,
 } from "../core/svg-ops.js";
 import {
@@ -26,6 +27,7 @@ import {
   queryPathNodesSchema,
   replaceAttributeValuesSchema,
   replacePathDataSchema,
+  transformPathPointsSchema,
   updateElementSchema,
 } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
@@ -254,6 +256,52 @@ export async function editPathNodes(input: z.infer<typeof editPathNodesSchema>, 
     elementId: input.elementId,
     editCount: write.result.editCount,
     changed: { d: { from: write.result.previousD, to: write.result.nextD } },
+  }, write), refresh);
+}
+
+export async function transformPathPoints(input: z.infer<typeof transformPathPointsSchema>, ctx: ToolContext) {
+  await prePullBeforeCurrentStateWrite(ctx, input.docId, "transform_path_points");
+  const write = await ctx.workspace.writeSvgWithSnapshot(
+    input.docId,
+    "transform_path_points",
+    (currentSvg) => {
+      const result = transformPathPointsInSvg(currentSvg, input);
+      return { svg: result.svg, result: result.result };
+    },
+    {
+      beforeSnapshot: (currentSvg) => {
+        transformPathPointsInSvg(currentSvg, input);
+      },
+    },
+  );
+  await appendOperationLog(write.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "transform_path_points",
+    inputSummary: {
+      elementId: input.elementId,
+      selectedPointCount: write.result.selectedPointCount,
+      transform: write.result.transform,
+    },
+    snapshotPath: write.snapshotPath,
+    status: "ok",
+  });
+  const refresh = await tryAutoSyncAttributesInInkscape(
+    ctx,
+    [{ elementId: input.elementId, attributeName: "d", value: write.result.nextD }],
+    input.docId,
+  );
+  return withGuiRefreshResult(withWriteDiagnostics({
+    ok: true,
+    docId: input.docId,
+    elementId: input.elementId,
+    selectedPointCount: write.result.selectedPointCount,
+    selectedPoints: write.result.selectedPoints,
+    editedSegments: write.result.editedSegments,
+    transform: write.result.transform,
+    changed: { d: { from: write.result.previousD, to: write.result.nextD } },
+    snapshotPath: write.snapshotPath,
+    currentSvgPath: write.paths.currentSvg,
   }, write), refresh);
 }
 
