@@ -729,3 +729,36 @@ Added query_path_nodes normalize option with explicit absolute normalized segmen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Document path node normalized summaries
+
+**Date**: 2026-06-19
+**Task**: Document path node normalized summaries
+**Branch**: `main`
+
+### Summary
+
+Added query_document pathNodeNormalize absolute mode for document-wide path-node summaries, preserving default output, keeping compact responses token-conscious, and documenting Phase 1 loop 16.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4e41960` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
