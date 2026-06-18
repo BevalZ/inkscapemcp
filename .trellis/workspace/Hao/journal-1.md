@@ -1106,3 +1106,36 @@ Added the Phase 1 transform_path_points command selector for case-sensitive supp
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: Path Point Type Selector
+
+**Date**: 2026-06-19
+**Task**: Path Point Type Selector
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 transform_path_points point_type selector with schema, core resolution, tool-level direct d sync tests, README docs, and roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c7bd5e0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
