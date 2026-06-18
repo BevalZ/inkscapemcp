@@ -16,7 +16,7 @@ import {
   runActionSchema,
 } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
-import { tryAutoRefreshInInkscape, withGuiRefreshResult, type ToolContext } from "./context.js";
+import { prePullBeforeCurrentStateWrite, tryAutoRefreshInInkscape, withGuiRefreshResult, type ToolContext } from "./context.js";
 
 type GeometryInput = z.infer<typeof pathGeometryBaseSchema>;
 type GeometryMultiInput = z.infer<typeof pathGeometryMultiSchema>;
@@ -105,6 +105,7 @@ async function applyInkscapeGeometry(
   },
   ctx: ToolContext,
 ) {
+  await prePullBeforeCurrentStateWrite(ctx, docId, operation, options.timeoutMs);
   const currentSvg = await ctx.workspace.readSvg(docId);
   prepareGeometrySvg(currentSvg, selectedIds, options);
 

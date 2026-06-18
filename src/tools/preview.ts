@@ -1,12 +1,20 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import * as z from "zod/v4";
 
 import { exportDocumentSchema, openInInkscapeSchema, refreshInInkscapeSchema, renderPreviewSchema } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
-import { jsonResult, type ToolContext } from "./context.js";
+import { prePullBeforeStaleTolerantOutput, jsonResult, type ToolContext } from "./context.js";
 import { normalizeExportFilename, readPngContent } from "./document.js";
+import { stripInkMcpMetadata } from "../core/sync-metadata.js";
 
 export async function renderPreview(input: z.infer<typeof renderPreviewSchema>, ctx: ToolContext) {
   const paths = ctx.workspace.documentPaths(input.docId);
+  const prePull = await prePullBeforeStaleTolerantOutput(ctx, input.docId, {
+    toolName: "render_preview",
+    skipPrePull: input.skipPrePull,
+    timeoutMs: input.timeoutMs,
+  });
   await ctx.workspace.readSvg(input.docId);
   const previewPath = ctx.workspace.previewPath(input.docId);
   const render = await ctx.inkscape.renderPng(paths.currentSvg, previewPath, {
@@ -30,6 +38,8 @@ export async function renderPreview(input: z.infer<typeof renderPreviewSchema>, 
       previewPath,
       currentSvgPath: paths.currentSvg,
       inkscape: { binaryPath: render.binaryPath, exitCode: render.exitCode },
+      ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
+      ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
     },
     [await readPngContent(previewPath)],
   );
@@ -37,14 +47,31 @@ export async function renderPreview(input: z.infer<typeof renderPreviewSchema>, 
 
 export async function exportDocument(input: z.infer<typeof exportDocumentSchema>, ctx: ToolContext) {
   const paths = ctx.workspace.documentPaths(input.docId);
-  await ctx.workspace.readSvg(input.docId);
-  const outputPath = ctx.workspace.exportPath(input.docId, normalizeExportFilename(input.filename, input.docId, input.format));
-  const exported = await ctx.inkscape.exportDocument(paths.currentSvg, outputPath, {
-    width: input.width,
-    dpi: input.dpi,
-    textToPath: input.textToPath,
+  const prePull = await prePullBeforeStaleTolerantOutput(ctx, input.docId, {
+    toolName: "export_document",
+    skipPrePull: input.skipPrePull,
     timeoutMs: input.timeoutMs,
   });
+  const svg = await ctx.workspace.readSvg(input.docId);
+  const outputPath = ctx.workspace.exportPath(input.docId, normalizeExportFilename(input.filename, input.docId, input.format));
+  const exportInputPath = input.includeInkMcpMetadata ? paths.currentSvg : ctx.workspace.tempPath(input.docId, `export-${Date.now()}.svg`);
+  if (!input.includeInkMcpMetadata) {
+    await mkdir(path.dirname(exportInputPath), { recursive: true });
+    await writeFile(exportInputPath, stripInkMcpMetadata(svg), "utf8");
+  }
+  let exported;
+  try {
+    exported = await ctx.inkscape.exportDocument(exportInputPath, outputPath, {
+      width: input.width,
+      dpi: input.dpi,
+      textToPath: input.textToPath,
+      timeoutMs: input.timeoutMs,
+    });
+  } finally {
+    if (!input.includeInkMcpMetadata) {
+      await rm(exportInputPath, { force: true }).catch(() => undefined);
+    }
+  }
   await appendOperationLog(paths, {
     level: "info",
     docId: input.docId,
@@ -60,6 +87,8 @@ export async function exportDocument(input: z.infer<typeof exportDocumentSchema>
     format: input.format,
     currentSvgPath: paths.currentSvg,
     inkscape: { binaryPath: exported.binaryPath, exitCode: exported.exitCode },
+    ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
+    ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
 }
 

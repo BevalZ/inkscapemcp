@@ -19,6 +19,7 @@ const extensionTargetDir = join(userDataDir, "extensions");
 
 await mkdir(extensionTargetDir, { recursive: true });
 await copyFile(join(extensionSourceDir, "inksmcp_pull.inx"), join(extensionTargetDir, "inksmcp_pull.inx"));
+await copyFile(join(extensionSourceDir, "inksmcp_push_gui_state.inx"), join(extensionTargetDir, "inksmcp_push_gui_state.inx"));
 await copyFile(join(extensionSourceDir, "inksmcp_pull.py"), join(extensionTargetDir, "inksmcp_pull.py"));
 await writeFile(
   join(extensionTargetDir, "inksmcp-extension.json"),

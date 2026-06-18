@@ -9,8 +9,10 @@ import {
   appendPathSegmentSchema,
   applySvgOperationsSchema,
   archiveDocumentSchema,
+  connectInkscapeWindowSchema,
   createDocumentSchema,
   deleteElementSchema,
+  disconnectInkscapeWindowSchema,
   drawPathSchema,
   editPathNodesSchema,
   exportDocumentSchema,
@@ -22,6 +24,7 @@ import {
   pathDifferenceSchema,
   pathGeometryBaseSchema,
   pathGeometryMultiSchema,
+  pullGuiStateSchema,
   queryPathNodesSchema,
   queryDocumentSchema,
   refreshInInkscapeSchema,
@@ -61,6 +64,7 @@ import { exportDocument, openInInkscape, refreshInInkscape, renderPreview } from
 import { importFont } from "./tools/fonts.js";
 import { runAllowedAction, runPathDifference, runPathGeometry } from "./tools/geometry.js";
 import { listCurrentSvgResources, listPreviewPngResources, readArtifactResource } from "./tools/resources.js";
+import { connectInkscapeWindow, disconnectInkscapeWindow, pullGuiState } from "./tools/sync.js";
 
 export function createServer() {
   const ctx = createToolContext();
@@ -68,6 +72,36 @@ export function createServer() {
     name: "inksmcp",
     version: "0.1.0",
   });
+
+  server.registerTool(
+    "connect_inkscape_window",
+    {
+      title: "Connect Inkscape window",
+      description: "Create an explicit InkSMCP connection for display-only or bidirectional GUI synchronization.",
+      inputSchema: connectInkscapeWindowSchema,
+    },
+    (input) => runTool("connect_inkscape_window", () => connectInkscapeWindow(input, ctx)),
+  );
+
+  server.registerTool(
+    "disconnect_inkscape_window",
+    {
+      title: "Disconnect Inkscape window",
+      description: "Disconnect an explicit InkSMCP GUI synchronization connection by connection id or document id.",
+      inputSchema: disconnectInkscapeWindowSchema,
+    },
+    (input) => runTool("disconnect_inkscape_window", () => disconnectInkscapeWindow(input, ctx)),
+  );
+
+  server.registerTool(
+    "pull_gui_state",
+    {
+      title: "Pull GUI state",
+      description: "Pull the current unsaved Inkscape GUI document state into the workspace for a bidirectional connection.",
+      inputSchema: pullGuiStateSchema,
+    },
+    (input) => runTool("pull_gui_state", () => pullGuiState(input, ctx)),
+  );
 
   server.registerTool(
     "create_document",

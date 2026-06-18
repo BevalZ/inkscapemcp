@@ -8,6 +8,9 @@ export type ErrorCode =
   | "INKSCAPE_ACTIVE_WINDOW_REFRESH_DISABLED"
   | "INKSCAPE_TIMEOUT"
   | "INKSCAPE_FAILED"
+  | "SYNC_CONFLICT"
+  | "SYNC_IDENTITY_MISMATCH"
+  | "SYNC_NOT_CONNECTED"
   | "WRITE_FAILED";
 
 export class InkMcpError extends Error {

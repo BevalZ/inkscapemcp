@@ -27,6 +27,14 @@ describe("Inkscape companion extension", () => {
     expect(inx).toContain("<param name=\"doc_id\" type=\"string\"");
   });
 
+  it("declares the hidden push GUI state extension action", async () => {
+    const inx = await readFile(path.join(repoRoot, "inkscape-extension", "inksmcp_push_gui_state.inx"), "utf8");
+
+    expect(inx).toContain("<id>dev.hydens.inksmcp.push_gui_state</id>");
+    expect(inx).toContain("<param name=\"action\" type=\"string\" gui-hidden=\"true\">push</param>");
+    expect(inx).toContain("<command location=\"inx\" interpreter=\"python\">inksmcp_pull.py</command>");
+  });
+
   it("passes the extension path-resolution self-test", async () => {
     await execFile(pythonBin, [path.join(repoRoot, "inkscape-extension", "inksmcp_pull.py"), "--self-test"], {
       timeout: 15000,
@@ -58,6 +66,9 @@ describe("Inkscape companion extension", () => {
     );
     await expect(readFile(path.join(extensionDir, "inksmcp_pull.py"), "utf8")).resolves.toContain(
       "resolve_requested_svg",
+    );
+    await expect(readFile(path.join(extensionDir, "inksmcp_push_gui_state.inx"), "utf8")).resolves.toContain(
+      "Push GUI State",
     );
 
     const config = JSON.parse(await readFile(path.join(extensionDir, "inksmcp-extension.json"), "utf8")) as {

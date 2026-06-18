@@ -6,6 +6,7 @@
         <page name="Options" gui-text="Options">
             <param name="doc_id" type="string" gui-text="Document id"></param>
             <param name="workspace_root" type="string" gui-text="Workspace root override"></param>
+            <param name="action" type="string" gui-hidden="true">pull</param>
         </page>
         <page name="Help" gui-text="Help">
             <label xml:space="preserve">Pulls workspace/drawings/&lt;Document id&gt;/current.svg into this Inkscape window.

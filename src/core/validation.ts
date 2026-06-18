@@ -39,6 +39,31 @@ export const createDocumentSchema = z.object({
   background: z.string().optional(),
 });
 
+const syncModeSchema = z.enum(["display_only", "bidirectional"]);
+const connectionIdSchema = z.string().regex(/^conn-[A-Za-z0-9_-]{8,80}$/);
+
+export const connectInkscapeWindowSchema = z.object({
+  docId: docIdSchema,
+  syncMode: syncModeSchema.default("display_only"),
+  connectionId: connectionIdSchema.optional(),
+  documentPath: z.string().min(1).optional(),
+  inferredDocId: docIdSchema.optional(),
+  runtimeDocumentId: z.string().min(1).max(200).optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+export const disconnectInkscapeWindowSchema = z.object({
+  docId: docIdSchema.optional(),
+  connectionId: connectionIdSchema.optional(),
+}).refine((input) => input.docId !== undefined || input.connectionId !== undefined, "Provide docId or connectionId");
+
+export const pullGuiStateSchema = z.object({
+  docId: docIdSchema,
+  connectionId: connectionIdSchema.optional(),
+  conflictPolicy: z.enum(["reject", "prefer_gui", "prefer_workspace"]).default("reject"),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
 export const addElementSchema = z.object({
   docId: docIdSchema,
   type: z.enum(supportedElementTypes),
@@ -143,6 +168,8 @@ export const editPathNodesSchema = z.object({
 export const queryPathNodesSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
+  skipPrePull: z.boolean().default(false),
+  allowStaleRead: z.boolean().default(false),
 });
 
 export const deleteElementSchema = z.object({
@@ -214,6 +241,8 @@ export const replaceAttributeValuesSchema = z.object({
 export const queryDocumentSchema = z.object({
   docId: docIdSchema,
   elementId: z.string().optional(),
+  skipPrePull: z.boolean().default(false),
+  allowStaleRead: z.boolean().default(false),
 });
 
 export const renderPreviewSchema = z.object({
@@ -222,6 +251,7 @@ export const renderPreviewSchema = z.object({
   dpi: z.number().positive().optional(),
   background: z.string().optional(),
   timeoutMs: z.number().int().positive().optional(),
+  skipPrePull: z.boolean().default(false),
 });
 
 export const exportDocumentSchema = z.object({
@@ -232,6 +262,8 @@ export const exportDocumentSchema = z.object({
   dpi: z.number().positive().optional(),
   textToPath: z.boolean().default(false),
   timeoutMs: z.number().int().positive().optional(),
+  skipPrePull: z.boolean().default(false),
+  includeInkMcpMetadata: z.boolean().default(false),
 });
 
 export const openInInkscapeSchema = z.object({
@@ -252,6 +284,7 @@ export const listHistorySchema = z.object({
 export const rollbackDocumentSchema = z.object({
   docId: docIdSchema,
   snapshotId: z.string().min(1),
+  confirmDiscardGuiState: z.boolean().default(false),
 });
 
 export const archiveDocumentSchema = z.object({

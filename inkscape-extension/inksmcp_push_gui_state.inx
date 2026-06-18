@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+    <name>Push GUI State</name>
+    <id>dev.hydens.inksmcp.push_gui_state</id>
+    <param name="tab" type="notebook">
+        <page name="Options" gui-text="Options">
+            <param name="action" type="string" gui-hidden="true">push</param>
+            <param name="doc_id" type="string" gui-hidden="true"></param>
+            <param name="workspace_root" type="string" gui-hidden="true"></param>
+            <param name="connection_id" type="string" gui-hidden="true"></param>
+            <param name="request_id" type="string" gui-hidden="true"></param>
+            <param name="sync_mode" type="string" gui-hidden="true">bidirectional</param>
+        </page>
+    </param>
+    <effect>
+        <object-type>all</object-type>
+        <effects-menu>
+            <submenu name="InkSMCP"/>
+        </effects-menu>
+    </effect>
+    <script>
+        <command location="inx" interpreter="python">inksmcp_pull.py</command>
+    </script>
+</inkscape-extension>

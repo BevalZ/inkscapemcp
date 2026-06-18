@@ -6,6 +6,8 @@ import type { DocumentPaths } from "../adapters/workspace.js";
 import { Workspace } from "../adapters/workspace.js";
 import { InkMcpError, toErrorPayload } from "../core/errors.js";
 import type { AttributeMap, SvgOperation } from "../core/svg-ops.js";
+import { prePullGuiStateForTool } from "./sync.js";
+import { updateActiveConnectionBaselineAfterMcpWrite } from "./sync.js";
 
 export interface ToolContext {
   workspace: Workspace;
@@ -72,6 +74,7 @@ export async function tryAutoRefreshInInkscape(ctx: ToolContext, paths: Document
       workspaceRoot: ctx.workspace.paths.root,
       timeoutMs: ctx.autoRefresh.timeoutMs,
     });
+    await updateActiveConnectionBaselineAfterMcpWrite(ctx, paths.docId);
     return {
       guiRefresh: {
         attempted: true,
@@ -109,6 +112,7 @@ export async function tryAutoRefreshInInkscape(ctx: ToolContext, paths: Document
 export async function tryAutoSyncAttributesInInkscape(
   ctx: ToolContext,
   updates: DirectAttributeUpdate[],
+  docId?: string,
 ): Promise<{ guiRefresh?: Record<string, unknown>; warning?: Record<string, unknown> }> {
   if (!ctx.autoRefresh?.enabled || updates.length === 0) {
     return {};
@@ -118,6 +122,9 @@ export async function tryAutoSyncAttributesInInkscape(
       updates,
       timeoutMs: ctx.autoRefresh.timeoutMs,
     });
+    if (docId) {
+      await updateActiveConnectionBaselineAfterMcpWrite(ctx, docId);
+    }
     return {
       guiRefresh: {
         attempted: true,
@@ -188,6 +195,38 @@ export function withGuiRefreshResult<T extends Record<string, unknown>>(
     ...(refresh.guiRefresh ? { guiRefresh: refresh.guiRefresh } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
+}
+
+export async function prePullBeforeCurrentStateWrite(
+  ctx: ToolContext,
+  docId: string,
+  toolName: string,
+  timeoutMs?: number,
+): Promise<void> {
+  await prePullGuiStateForTool(ctx, docId, { toolName, timeoutMs });
+}
+
+export async function prePullBeforeCurrentStateRead(
+  ctx: ToolContext,
+  docId: string,
+  options: { toolName: string; skipPrePull?: boolean; allowStaleRead?: boolean; timeoutMs?: number },
+): Promise<{ warning?: Record<string, unknown>; pulled?: Record<string, unknown> }> {
+  return prePullGuiStateForTool(ctx, docId, {
+    ...options,
+    readOnly: true,
+  });
+}
+
+export async function prePullBeforeStaleTolerantOutput(
+  ctx: ToolContext,
+  docId: string,
+  options: { toolName: string; skipPrePull?: boolean; timeoutMs?: number },
+): Promise<{ warning?: Record<string, unknown>; pulled?: Record<string, unknown> }> {
+  return prePullGuiStateForTool(ctx, docId, {
+    ...options,
+    readOnly: true,
+    staleOkByDefault: true,
+  });
 }
 
 function positiveEnvInt(name: string): number | undefined {

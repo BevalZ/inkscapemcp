@@ -2,7 +2,7 @@
 
 `inksmcp` is a local, single-user stdio MCP server for AI-assisted Inkscape SVG workflows.
 
-The server treats workspace SVG files as the source of truth. Inkscape is used for PNG preview rendering, export, and optional GUI opening.
+The server treats workspace SVG files as the default source of truth. When a document is explicitly connected in bidirectional mode, MCP pulls the current unsaved Inkscape GUI state before current-state reads and writes.
 
 ## Install
 
@@ -30,7 +30,7 @@ active-window-start;dev.hydens.inksmcp.pull-workspace-document.noprefs;active-wi
 
 This is different from Inkscape's `file-rebase` action.
 
-The installer copies `inksmcp_pull.inx` and `inksmcp_pull.py` to the Inkscape user extensions directory and writes `inksmcp-extension.json` with the current workspace root. By default the workspace is `./workspace`; override it when needed:
+The installer copies `inksmcp_pull.inx`, `inksmcp_push_gui_state.inx`, and `inksmcp_pull.py` to the Inkscape user extensions directory and writes `inksmcp-extension.json` with the current workspace root. By default the workspace is `./workspace`; override it when needed:
 
 ```powershell
 npm run install:inkscape-extension -- --workspace D:\path\to\inksmcp\workspace
@@ -44,6 +44,19 @@ npm run install:inkscape-extension -- --user-data-dir C:\Users\you\AppData\Roami
 ```
 
 Open the Inkscape window from `workspace/drawings/{docId}/current.svg` so the extension can infer the document id when MCP triggers it. The menu item is still useful for manual diagnosis: leave `Document id` empty when the file was opened from the workspace path, or enter the `docId` manually.
+
+## Bidirectional GUI Sync
+
+Bidirectional sync is explicit and off by default. Use it when user edits inside Inkscape should become authoritative even before the file is saved:
+
+1. Install the companion extension and restart Inkscape.
+2. Open `workspace/drawings/{docId}/current.svg` in Inkscape.
+3. Call `connect_inkscape_window({ "docId": "...", "syncMode": "bidirectional" })`.
+4. MCP tools that read or write current SVG state will pre-pull the GUI state through the extension.
+
+The pull path is file-based and identity-checked. The extension writes `workspace/gui-pull/{requestId}.svg` plus `workspace/gui-pull/{requestId}.json`; MCP validates the manifest, the SVG metadata marker, the connection id, and revision/hash metadata before replacing `current.svg`.
+
+Use `pull_gui_state` for an explicit manual pull, and `disconnect_inkscape_window` to end a connection. The MVP does not run a background daemon or event listener. If more than one active bidirectional connection targets the same document, MCP rejects instead of guessing.
 
 ## Build And Test
 
@@ -111,6 +124,7 @@ If the host supports MCP `notifications/tools/list_changed`, changed tool regist
 - `INKSMCP_MAX_TIMEOUT_MS`: maximum allowed tool-provided timeout. Defaults to `120000`.
 - `INKSMCP_AUTO_REFRESH_INKSCAPE`: set to `0` to disable automatic active-window refresh after successful write tools. Existing-object attribute updates use direct active-window attribute sync; structural edits trigger companion-extension refresh.
 - `INKSMCP_AUTO_REFRESH_TIMEOUT_MS`: timeout for automatic active-window attribute sync or companion-extension refresh. Defaults to `10000`.
+- `INKSMCP_GUI_PRE_PULL_TTL_MS`: default cache window for automatic GUI pre-pull. Defaults to `1000`.
 - `INKSMCP_ENABLE_UNSAFE_ACTIVE_WINDOW_REFRESH`: Windows-only escape hatch for manual experiments with active-window companion refresh. Defaults to disabled because it can target the wrong document or crash Inkscape.
 - `INKSMCP_HOT_WATCH_PATHS`: paths watched by `dist/hot-server.js`. Defaults to the build output directory.
 - `INKSMCP_HOT_DEBOUNCE_MS`: debounce before restarting the hot worker. Defaults to `300`.
@@ -129,13 +143,18 @@ workspace/
       history/
       preview.png
   archive/
+  connections/
   fonts/
+  gui-pull/
 ```
 
 ## Tools
 
 Phase 1 document and preview tools:
 
+- `connect_inkscape_window`
+- `disconnect_inkscape_window`
+- `pull_gui_state`
 - `create_document`
 - `add_element`
 - `apply_svg_operations`

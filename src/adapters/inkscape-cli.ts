@@ -33,6 +33,14 @@ export interface CompanionRefreshOptions extends InkscapeRunOptions {
   workspaceRoot: string;
 }
 
+export interface CompanionGuiPullOptions extends InkscapeRunOptions {
+  docId: string;
+  workspaceRoot: string;
+  connectionId: string;
+  requestId: string;
+  syncMode: "display_only" | "bidirectional";
+}
+
 export interface DirectAttributeUpdate {
   elementId: string;
   attributeName: string;
@@ -49,6 +57,7 @@ export interface ActionExportOptions extends InkscapeRunOptions {
 }
 
 export const companionRefreshAction = "dev.hydens.inksmcp.pull-workspace-document.noprefs";
+export const companionPushGuiStateAction = "dev.hydens.inksmcp.push-gui-state.noprefs";
 export const unsafeActiveWindowRefreshEnv = "INKSMCP_ENABLE_UNSAFE_ACTIVE_WINDOW_REFRESH";
 const companionConfigFile = "inksmcp-extension.json";
 
@@ -151,6 +160,17 @@ export class InkscapeCli {
     };
   }
 
+  async pushGuiStateWithCompanionExtension(options: CompanionGuiPullOptions): Promise<InkscapeResult> {
+    await this.writeCompanionConfig({
+      workspaceRoot: options.workspaceRoot,
+      activeDocId: options.docId,
+      connectionId: options.connectionId,
+      requestId: options.requestId,
+      syncMode: options.syncMode,
+    });
+    return this.run([`--actions=active-window-start;${companionPushGuiStateAction};active-window-end`], options);
+  }
+
   async runActionsToSvg(inputSvgPath: string, options: ActionExportOptions): Promise<InkscapeResult> {
     const actionText = [...options.actions, `export-filename:${options.outputPath}`, "export-do"].join(";");
     return this.run([inputSvgPath, `--actions=${actionText}`], options);
@@ -238,7 +258,13 @@ export class InkscapeCli {
     return [...new Set(candidates.map((candidate) => path.resolve(candidate)))];
   }
 
-  private async writeCompanionConfig(config: { workspaceRoot: string; activeDocId: string }): Promise<void> {
+  private async writeCompanionConfig(config: {
+    workspaceRoot: string;
+    activeDocId: string;
+    connectionId?: string;
+    requestId?: string;
+    syncMode?: "display_only" | "bidirectional";
+  }): Promise<void> {
     const userDataDir = await this.userDataDirectory();
     const extensionDir = path.join(userDataDir, "extensions");
     await mkdir(extensionDir, { recursive: true });
@@ -248,6 +274,9 @@ export class InkscapeCli {
         {
           workspaceRoot: path.resolve(config.workspaceRoot),
           activeDocId: config.activeDocId,
+          ...(config.connectionId ? { connectionId: config.connectionId } : {}),
+          ...(config.requestId ? { requestId: config.requestId } : {}),
+          ...(config.syncMode ? { syncMode: config.syncMode } : {}),
         },
         null,
         2,

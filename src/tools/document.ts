@@ -23,7 +23,14 @@ import {
   rollbackDocumentSchema,
 } from "../core/validation.js";
 import { appendOperationLog } from "../logging/operation-log.js";
-import { tryAutoRefreshInInkscape, withGuiRefreshResult, type ToolContext } from "./context.js";
+import {
+  prePullBeforeCurrentStateRead,
+  prePullBeforeCurrentStateWrite,
+  tryAutoRefreshInInkscape,
+  withGuiRefreshResult,
+  type ToolContext,
+} from "./context.js";
+import { ensureNoActiveBidirectionalConnectionForRollback } from "./sync.js";
 
 export async function createDocument(input: z.infer<typeof createDocumentSchema>, ctx: ToolContext) {
   const title = input.title ?? "Untitled SVG";
@@ -59,6 +66,7 @@ export async function replaceDocumentSvg(input: z.infer<typeof replaceDocumentSv
     );
   }
 
+  await prePullBeforeCurrentStateWrite(ctx, input.docId, "replace_document_svg");
   const parsed = parseFullSvg(input.svg);
   const serialized = serializeSvg(parsed);
   const write = await ctx.workspace.writeSvgWithSnapshot(input.docId, "replace_document_svg", () => ({
@@ -91,6 +99,11 @@ export async function replaceDocumentSvg(input: z.infer<typeof replaceDocumentSv
 }
 
 export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, ctx: ToolContext) {
+  const prePull = await prePullBeforeCurrentStateRead(ctx, input.docId, {
+    toolName: "query_document",
+    skipPrePull: input.skipPrePull,
+    allowStaleRead: input.allowStaleRead,
+  });
   const svg = await ctx.workspace.readSvg(input.docId);
   const metadata = await ctx.workspace.readMetadata(input.docId);
   const paths = ctx.workspace.documentPaths(input.docId);
@@ -111,6 +124,8 @@ export async function queryDocument(input: z.infer<typeof queryDocumentSchema>, 
     ok: true,
     document: summarizeDocument(document, paths.currentSvg, input.docId, metadata.title),
     tree: summarizeElement(target),
+    ...(prePull.pulled ? { guiPrePull: prePull.pulled } : {}),
+    ...(prePull.warning ? { warnings: [prePull.warning] } : {}),
   };
 }
 
@@ -123,6 +138,9 @@ export async function listHistory(input: z.infer<typeof listHistorySchema>, ctx:
 }
 
 export async function rollbackDocument(input: z.infer<typeof rollbackDocumentSchema>, ctx: ToolContext) {
+  if (!input.confirmDiscardGuiState) {
+    await ensureNoActiveBidirectionalConnectionForRollback(ctx, input.docId);
+  }
   const result = await ctx.workspace.rollback(input.docId, input.snapshotId);
   await appendOperationLog(result.paths, {
     level: "info",
