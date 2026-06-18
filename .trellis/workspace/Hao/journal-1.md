@@ -179,7 +179,13 @@ Implemented Phase 1 loop 1 foundation hardening: identity/capability summaries, 
 
 ### Main Changes
 
-(Add details)
+- Added `recover_document({ docId, snapshotId, confirmDiscardGuiState? })` as a registered MCP tool.
+- Reused workspace rollback mechanics with a tool-name override so recovery snapshots/diffs are labeled `recover_document`.
+- Added recovery-oriented response fields: `recoveredFromSnapshotId`, `preRecoverySnapshotPath`, `restoredPath`, and `currentSvgPath`.
+- Preserved active bidirectional GUI guard unless `confirmDiscardGuiState: true`.
+- Added tests for normal recovery, missing/unsafe snapshot rejection, compact logging, structural refresh, and bidirectional guard behavior.
+- Documented the recovery contract in `README.md` and `.trellis/spec/backend/roadmap-memory.md`.
+- Archived `.trellis/tasks/06-18-phase1-recover-document-loop`.
 
 ### Git Commits
 
@@ -373,3 +379,41 @@ Completed Phase 1 Loop 5 by adding create_checkpoint as a history-based recovery
 ### Next Steps
 
 - Continue Phase 1 recovery/replay foundation with the next narrow slice, likely stale-baseline dry-run or recovery helper work.
+
+
+## Session 11: Phase 1 Recover Document Loop
+
+**Date**: 2026-06-18
+**Task**: Phase 1 Recover Document Loop
+**Branch**: `main`
+
+### Summary
+
+Completed Phase 1 Loop 6 by adding recover_document for explicit snapshot/checkpoint recovery with snapshot-first safety, bidirectional guard, compact logging, and structural refresh.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9fb48bf` | feat: add Phase 1 recover document tool |
+| `952f3c4` | chore(task): archive 06-18-phase1-recover-document-loop |
+
+### Testing
+
+- [OK] `npm run typecheck`
+- [OK] `npm test` (21 files / 100 tests)
+- [OK] `npm run build`
+- [OK] `python inkscape-extension/inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Continue Phase 1 recovery/replay foundation with stale-baseline dry-run or deterministic operation replay scaffolding.
