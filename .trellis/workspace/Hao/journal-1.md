@@ -894,3 +894,36 @@ Extended transform_path_points with set_relative for segment-base-relative endpo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Path point bbox selector
+
+**Date**: 2026-06-19
+**Task**: Path point bbox selector
+**Branch**: `main`
+
+### Summary
+
+Added bbox point selection for transform_path_points, including schema validation, resolved point transforms, direct-sync tool coverage, README docs, and Phase 1 loop 21 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fcd0866` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
