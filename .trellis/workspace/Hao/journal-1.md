@@ -338,7 +338,9 @@ Implemented preview-only GUI pull conflict handling with merge preview artifacts
 
 ### Main Changes
 
-(Add details)
+- Added `pointSelector.type: "radius"` for `transform_path_points`.
+- Implemented inclusive circular absolute-distance selection with deterministic path-order results.
+- Added schema, core, tool-level, README, and roadmap memory coverage.
 
 ### Git Commits
 
@@ -348,7 +350,12 @@ Implemented preview-only GUI pull conflict handling with merge preview artifacts
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `npx vitest run tests/path-validation.test.ts tests/svg-ops.test.ts tests/elements.test.ts`
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension\inksmcp_pull.py --self-test`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -988,6 +995,39 @@ Added nearest point selection for transform_path_points, including schema valida
 | Hash | Message |
 |------|---------|
 | `f12bb54` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 27: Path point radius selector
+
+**Date**: 2026-06-19
+**Task**: Path point radius selector
+**Branch**: `main`
+
+### Summary
+
+Added radius point selection for transform_path_points, including schema validation, inclusive absolute-distance resolution, direct-sync tool coverage, README docs, and Phase 1 loop 24 roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7d290d7` | (see git log) |
 
 ### Testing
 
