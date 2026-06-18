@@ -204,6 +204,7 @@ export const editPathNodesSchema = z.object({
 export const queryPathNodesSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
+  normalize: z.enum(["none", "absolute"]).default("none"),
   skipPrePull: z.boolean().default(false),
   allowStaleRead: z.boolean().default(false),
 });

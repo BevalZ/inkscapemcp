@@ -356,6 +356,46 @@ describe("element tools", () => {
     });
     await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
   });
+
+  it("queries absolute-normalized path nodes without writing or refreshing", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryPathNodes(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        normalize: "absolute",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "sync-doc",
+      elementId: "mouth",
+      normalize: "absolute",
+      normalizedSegments: [
+        {
+          index: 0,
+          cmd: "M",
+          points: { end: { x: 100, y: 30 } },
+        },
+        {
+          index: 1,
+          cmd: "c",
+          points: {
+            c1: { x: 118, y: 34 },
+            c2: { x: 131, y: 31 },
+            end: { x: 141, y: 21 },
+          },
+        },
+      ],
+    });
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+  });
 });
 
 function baseSvg(): string {

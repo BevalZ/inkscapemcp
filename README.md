@@ -242,7 +242,7 @@ For automatic GUI refresh, `update_element`, `nudge_path_element`, `replace_path
 
 `edit_path_nodes` applies compact node-level edits to an existing path's `d` attribute. It can move endpoints/control points, insert structured segments, and delete segments. For safe round-tripping it supports paths made from `M`, `L`, `C`, `Q`, and `Z` commands; use `replace_path_data` for more complex SVG path commands such as arcs.
 
-`query_path_nodes` is read-only and returns the same editable segment boundary used by `edit_path_nodes`, including segment indexes, raw point values, absolute point positions, and available point names. It does not create snapshots or refresh Inkscape.
+`query_path_nodes` is read-only and returns the same editable segment boundary used by `edit_path_nodes`, including segment indexes, raw point values, absolute point positions, and available point names. It accepts `normalize: "none" | "absolute"`; the default keeps the existing raw segment response, while `normalize: "absolute"` adds an explicit normalized segment view whose point values are absolute coordinates. It does not create snapshots or refresh Inkscape.
 
 Example:
 

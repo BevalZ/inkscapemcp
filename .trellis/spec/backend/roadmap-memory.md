@@ -98,6 +98,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 12 established `apply_id_repairs` as the explicit mutation boundary for reviewed id remappings. It requires `confirmApplyRepairs: true`, applies only caller-supplied mappings, validates unsafe ids, duplicates, missing ids, and target conflicts before snapshotting, pre-pulls active bidirectional GUI state before current-state writes, rewrites conservative internal references, snapshots before save, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh.
 - Phase 1 loop 13 established read-only merge preview artifact inspection. `list_merge_previews` and `read_merge_preview` expose saved `pull_gui_state({ conflictPolicy: "preview_only" })` artifacts without GUI pre-pull, snapshots, metadata writes, operation logs, operation-diff artifacts, or Inkscape refresh. SVG content is returned only when `includeSvg: true`.
 - Phase 1 loop 14 established `query_document({ includeResolvedStyle: true })` as a read-only effective SVG style summary. It resolves presentation attributes plus inline `style` declarations with inheritance and local override source tracking, supports compact and standard/full response modes, and reports unsupported stylesheet cascade, CSS variables, and `!important` as limitations instead of pretending to compute renderer CSS.
+- Phase 1 loop 15 established `query_path_nodes({ normalize: "absolute" })` as an explicit read-only normalized path-node view. The default remains `normalize: "none"` for compatibility; absolute mode adds normalized segment point data derived from the existing path parser without rewriting SVG or changing edit semantics. Future document-wide normalized path summaries and edit-side normalization should reuse this contract.
 
 ### 4. Validation & Error Matrix
 
@@ -556,6 +557,74 @@ const resolvedStyle = summarizeResolvedStyles(svg, {
 ```
 
 Keep this as an SVG authoring summary with explicit limitations. A future renderer-backed or stylesheet-aware inspection tool must use a separate contract.
+
+## Scenario: Path Node Normalized Query Contract
+
+### 1. Scope / Trigger
+
+- Trigger: inspecting path geometry in stable absolute coordinates before precise edits.
+- Scope: `query_path_nodes({ normalize: "none" | "absolute" })`.
+- Out of scope: writing normalized path data, changing `edit_path_nodes`, adding arc support, path simplification, and document-wide normalized path summaries.
+
+### 2. Signatures
+
+- Tool: `query_path_nodes({ docId, elementId, normalize?, skipPrePull?, allowStaleRead? })`
+- `normalize`: `"none" | "absolute"`, default `"none"`.
+
+### 3. Contracts
+
+- The tool is read-only: no snapshots, metadata writes, operation logs, operation-diff artifacts, preview artifacts, or Inkscape refresh.
+- Current-state read pre-pull behavior is unchanged for active bidirectional documents.
+- `normalize: "none"` preserves the existing response shape with raw segment `points` and `absolutePoints`.
+- `normalize: "absolute"` adds `normalize: "absolute"` plus `normalizedSegments`.
+- `normalizedSegments` preserve segment `index`, original `cmd`, `relative`, and `availablePoints`.
+- `normalizedSegments[].points` contains absolute coordinates for the available endpoint/control points.
+- `Z`/`z` segments remain present with no available points and an empty point map.
+- The supported command boundary remains `M`, `L`, `C`, `Q`, `Z` and relative variants. Unsupported commands reject through the existing path parser.
+
+### 4. Validation & Error Matrix
+
+- Invalid `normalize` value -> schema validation failure.
+- Missing element or non-path element -> `INVALID_INPUT`, no mutation.
+- Missing `d` attribute -> `INVALID_INPUT`, no mutation.
+- Unsupported path command -> `INVALID_INPUT` with the unsupported command detail, no mutation.
+- Active bidirectional pre-pull failure with stale reads disallowed -> sync/Inkscape error, no query result.
+- Active bidirectional pre-pull failure with `allowStaleRead: true` -> stale-read warning and workspace-based query result.
+
+### 5. Good/Base/Bad Cases
+
+- Good: query `M10 10 l5 1 c2 3 4 5 6 7` with `normalize: "absolute"` and receive absolute endpoints/control points while preserving raw segment details.
+- Good: omit `normalize` and receive the existing response for older agents.
+- Base: close-path segment appears in normalized output with no points.
+- Bad: rewriting the path's `d` attribute from a query operation.
+- Bad: changing edit semantics so `edit_path_nodes` silently expects normalized coordinates.
+
+### 6. Tests Required
+
+- Schema default accepts omitted `normalize` as `"none"` and rejects invalid values.
+- Core query test proves absolute normalized output for relative `L`, `C`, `Q`, and close-path segments.
+- Tool-level test proves normalized query does not call auto-refresh and does not create history snapshots.
+- Existing unsupported-command tests remain green.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not normalize by rewriting source path data during a query.
+element.setAttribute("d", absoluteD);
+```
+
+#### Correct
+
+```typescript
+const result = queryPathNodesInSvg(svg, {
+  elementId,
+  normalize: "absolute",
+});
+```
+
+Keep normalization as an explicit read-side view. Later write tools must define their own coordinate contract instead of inferring mutation behavior from this query option.
 
 ## Phase Summary
 

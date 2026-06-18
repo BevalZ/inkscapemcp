@@ -89,6 +89,16 @@ export interface PathNodesQueryResult {
   d: string;
   segmentCount: number;
   segments: EditablePathSegmentInfo[];
+  normalize?: "absolute";
+  normalizedSegments?: NormalizedPathSegmentInfo[];
+}
+
+export interface NormalizedPathSegmentInfo {
+  index: number;
+  cmd: EditablePathSegmentInfo["cmd"];
+  relative: boolean;
+  availablePoints: EditablePathSegmentInfo["availablePoints"];
+  points: EditablePathSegmentInfo["absolutePoints"];
 }
 
 export function addElementToSvg(
@@ -258,6 +268,7 @@ export function queryPathNodesInSvg(
   svg: string,
   input: {
     elementId: string;
+    normalize?: "none" | "absolute";
   },
 ): PathNodesQueryResult {
   const document = parseSvgDocument(svg);
@@ -272,6 +283,18 @@ export function queryPathNodesInSvg(
     d,
     segmentCount: segments.length,
     segments,
+    ...(input.normalize === "absolute"
+      ? {
+          normalize: "absolute" as const,
+          normalizedSegments: segments.map((segment) => ({
+            index: segment.index,
+            cmd: segment.cmd,
+            relative: segment.relative,
+            availablePoints: segment.availablePoints,
+            points: segment.absolutePoints,
+          })),
+        }
+      : {}),
   };
 }
 

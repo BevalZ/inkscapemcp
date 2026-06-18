@@ -75,12 +75,28 @@ describe("path tool validation", () => {
         docId: "path-doc",
         elementId: "line",
       }),
-    ).toMatchObject({ docId: "path-doc", elementId: "line" });
+    ).toMatchObject({ docId: "path-doc", elementId: "line", normalize: "none" });
+
+    expect(
+      queryPathNodesSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        normalize: "absolute",
+      }),
+    ).toMatchObject({ docId: "path-doc", elementId: "line", normalize: "absolute" });
 
     expect(() =>
       queryPathNodesSchema.parse({
         docId: "path-doc",
         elementId: "../line",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      queryPathNodesSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        normalize: "relative",
       }),
     ).toThrow();
   });
