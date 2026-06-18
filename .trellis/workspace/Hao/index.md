@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~142 | Active |
+| `journal-1.md` | ~175 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-18 | Phase 1 foundation loop 1 | `085a741` | `main` |
 | 4 | 2026-06-18 | Resolve InkSMCP sync boundaries and roadmap | `299b076`, `30ac804` | `main` |
 | 3 | 2026-06-18 | Implement bidirectional Inkscape GUI sync | `bb32a7e`, `6dfaaed` | `main` |
 | 2 | 2026-06-18 | Improve InkSMCP path editing workflows | `53038c3` | `main` |

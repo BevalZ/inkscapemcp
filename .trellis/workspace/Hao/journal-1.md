@@ -140,3 +140,36 @@ Implemented remaining sync-boundary foundations, vectorization/import-export/que
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Phase 1 foundation loop 1
+
+**Date**: 2026-06-18
+**Task**: Phase 1 foundation loop 1
+**Branch**: `main`
+
+### Summary
+
+Implemented Phase 1 loop 1 foundation hardening: identity/capability summaries, persisted explicit polling preferences, compact query/dependency summaries, operation diff artifacts, and GUI diagnostic readiness output.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `085a741` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
