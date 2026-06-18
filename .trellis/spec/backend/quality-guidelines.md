@@ -389,18 +389,103 @@ await replaceDocumentSvg({
 - Test workers created outside the project tree must resolve SDK imports from the project root.
 - Request timeouts in the test should be short enough to expose proxy/worker handshake failures quickly.
 
+## Scenario: Bidirectional Inkscape GUI Sync Contract
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing tools that synchronize MCP workspace state with the currently open Inkscape GUI document.
+- Scope: explicit local single-user sync for workspace documents. Bidirectional mode is opt-in per document/connection.
+- Out of scope: background daemons, event listeners, mouse/keyboard automation, multi-window merge, three-way SVG merge, semantic object re-identification, and raster vectorization.
+
+### 2. Signatures
+
+- Tools:
+  - `connect_inkscape_window({ docId, syncMode, connectionId?, documentPath?, inferredDocId?, runtimeDocumentId?, timeoutMs? })`
+  - `disconnect_inkscape_window({ docId?, connectionId? })`
+  - `pull_gui_state({ docId, connectionId?, conflictPolicy?, timeoutMs? })`
+- Workspace files:
+  - `workspace/connections/{connectionId}.json`
+  - `workspace/gui-pull/{requestId}.svg`
+  - `workspace/gui-pull/{requestId}.json`
+- Metadata fields:
+  - `revision`
+  - `contentHash`
+  - `lastWriter`
+  - `lastGuiPullAt?`
+
+### 3. Contracts
+
+- Default behavior remains workspace-only unless a connected document uses `syncMode: "bidirectional"`.
+- `connectionId` must be present in both the workspace connection sidecar and the SVG metadata marker.
+- The SVG metadata marker is workflow metadata: preserve it in `current.svg` and history, strip it from `export_document` by default, and preserve it only with `includeInkMcpMetadata: true`.
+- `pull_gui_state` must trigger the companion extension push action, validate manifest identity, validate the SVG marker identity, parse and safety-filter the pulled SVG, detect revision/hash conflicts, snapshot before write, update metadata, update `lastSeenAt`, and return `idDiff`.
+- `pull_gui_state` must not refresh Inkscape after writing, because the GUI state was the source.
+- Current-state write tools must pre-pull for active bidirectional documents and fail before writing if pre-pull fails.
+- Current-state query tools must pre-pull by default. `allowStaleRead: true` may return stale workspace output with a warning. Write tools must not expose `skipPrePull`.
+- `render_preview` and `export_document` may use stale workspace output with a warning when pre-pull fails.
+- `rollback_document` must reject when bidirectional sync is active unless `confirmDiscardGuiState: true`.
+- Ambiguous active bidirectional connections for the same `docId` must reject; never guess based on the active window alone.
+
+### 4. Validation & Error Matrix
+
+- Missing connection -> `SYNC_NOT_CONNECTED`.
+- Manifest or SVG marker mismatch -> `SYNC_IDENTITY_MISMATCH`.
+- Workspace revision/hash changed since connection baseline and `conflictPolicy: "reject"` -> `SYNC_CONFLICT`.
+- Pre-pull failure before a write -> fail the write and leave `current.svg` unchanged.
+- Pre-pull failure before stale-tolerant output -> return a warning and use the existing workspace file.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `pull_gui_state` validates manifest and marker identity, snapshots the old workspace SVG, writes the pulled GUI SVG, and returns `idDiff`.
+- Base: `render_preview` runs while pre-pull fails; it returns stale workspace output with a warning instead of failing the render.
+- Bad: a write tool skips pre-pull for an active bidirectional document and overwrites unsaved GUI edits.
+
+### 6. Tests Required
+
+- Connection config and SVG marker creation.
+- GUI pull manifest/marker identity validation.
+- Revision/hash metadata updates and conflict rejection.
+- Pre-pull write failure leaves `current.svg` unchanged.
+- Read/export stale-warning behavior.
+- Export strips InkSMCP metadata by default and preserves it when explicitly requested.
+- Extension self-test covers pull and push path resolution.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not write workspace current.svg from a GUI pull without validating identity.
+await workspace.writeSvgWithSnapshot(docId, "pull_gui_state", () => ({ svg: pulledSvg, result: {} }));
+```
+
+#### Correct
+
+```typescript
+requireInkMcpMarker(pulledSvg, { connectionId, docId });
+await workspace.writeGuiPulledSvgWithSnapshot(
+  docId,
+  "pull_gui_state",
+  baseline,
+  conflictPolicy,
+  pulledSvg,
+  result,
+);
+```
+
 ## Scenario: Inkscape Companion Extension Contract
 
 ### 1. Scope / Trigger
 
 - Trigger: adding or changing files under `inkscape-extension/` or companion extension installation scripts.
-- Scope: optional local Inkscape extension used to pull MCP workspace SVG into the current Inkscape window.
-- Out of scope: background services, network listeners, mouse/keyboard automation, and writing Inkscape GUI state back into the MCP workspace.
+- Scope: optional local Inkscape extension used to pull MCP workspace SVG into the current Inkscape window and push explicitly connected GUI state into `workspace/gui-pull/` artifacts.
+- Out of scope: background services, network listeners, mouse/keyboard automation, and direct writes from the extension into `workspace/drawings/{docId}/current.svg`.
 
 ### 2. Signatures
 
 - Extension files:
   - `inkscape-extension/inksmcp_pull.inx`
+  - `inkscape-extension/inksmcp_push_gui_state.inx`
   - `inkscape-extension/inksmcp_pull.py`
 - Installer:
   - `npm run install:inkscape-extension`
@@ -413,6 +498,7 @@ await replaceDocumentSvg({
 
 - The extension must be pull-based: Inkscape invokes it from the current window and receives the workspace SVG as extension output.
 - MCP may invoke the extension automatically through `active-window-start;dev.hydens.inksmcp.pull-workspace-document.noprefs;active-window-end` after a successful workspace write.
+- For bidirectional sync, MCP may invoke `active-window-start;dev.hydens.inksmcp.push-gui-state.noprefs;active-window-end`; the extension must write only `workspace/gui-pull/{requestId}.svg` and `{requestId}.json`, never `current.svg`.
 - The extension reads only `workspace/drawings/<docId>/current.svg`.
 - `docId` validation must match the MCP document id boundary: 1-64 characters, first character alphanumeric, remaining characters letters, numbers, underscores, or hyphens.
 - The resolved `current.svg` path must remain inside the configured workspace root.
@@ -441,6 +527,7 @@ await replaceDocumentSvg({
 
 - `.inx` declares `Extensions > InkSMCP > Pull Workspace Document` and references `inksmcp_pull.py` with the Python interpreter.
 - Python script self-test covers safe `docId`, inferred `docId`, workspace confinement, and missing/unsafe paths.
+- Python script self-test covers push request id, connection id, marker validation, and `gui-pull` path confinement.
 - Installer test copies files to an explicit temporary user data directory and writes the workspace config.
 
 ### 7. Wrong vs Correct
