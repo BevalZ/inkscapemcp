@@ -437,7 +437,7 @@ await replaceDocumentSvg({
 - Tools:
   - `connect_inkscape_window({ docId, syncMode, connectionId?, documentPath?, inferredDocId?, runtimeDocumentId?, windowId?, timeoutMs? })`
   - `disconnect_inkscape_window({ docId?, connectionId? })`
-  - `pull_gui_state({ docId, connectionId?, conflictPolicy?: "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping", timeoutMs? })`
+  - `pull_gui_state({ docId, connectionId?, conflictPolicy?: "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping" | "preview_only", timeoutMs? })`
   - `start_gui_sync_polling({ docId, connectionId?, intervalMs?, timeoutMs?, persist? })`
   - `stop_gui_sync_polling({ docId?, connectionId? })`
   - `get_gui_sync_status({ docId?, connectionId?, includeHistory? })`
@@ -446,6 +446,8 @@ await replaceDocumentSvg({
   - `workspace/connections/{connectionId}.polling.json`
   - `workspace/gui-pull/{requestId}.svg`
   - `workspace/gui-pull/{requestId}.json`
+  - `workspace/drawings/{docId}/merge-previews/{artifactId}.svg`
+  - `workspace/drawings/{docId}/merge-previews/{artifactId}.json`
 - Metadata fields:
   - `revision`
   - `contentHash`
@@ -462,6 +464,8 @@ await replaceDocumentSvg({
 - `pull_gui_state` must trigger the companion extension push action, validate manifest identity, validate the SVG marker identity, parse and safety-filter the pulled SVG, detect revision/hash conflicts, snapshot before write, update metadata, update `lastSeenAt`, and return `idDiff`.
 - `pull_gui_state` conflicts must include a structured `conflictReport` with baseline metadata, current workspace metadata, GUI candidate hash, id diff, and policy suggestions.
 - `conflictPolicy: "merge_non_overlapping"` may perform a conservative three-way SVG merge only when element ids changed on one side relative to the saved connection baseline. Overlapping element changes, reparenting, missing parents, and concurrent adds with the same id must reject with merge conflict details.
+- `conflictPolicy: "preview_only"` validates the GUI pull and may write merge preview artifacts, but must never replace `current.svg`, snapshot, update document metadata, update connection baselines, refresh Inkscape, or append operation logs. It returns `pullStatus: "clean" | "previewable" | "conflict_only"`.
+- Merge conflicts should expose stable `classes` values for agent explanation and tests, including same-attribute changes, different-attribute changes, text conflicts, one-sided deletes, concurrent same-id adds, parent changes, sibling-order changes, and dependency-sensitive changes.
 - `pull_gui_state` must not refresh Inkscape after writing, because the GUI state was the source.
 - Current-state write tools must pre-pull for active bidirectional documents and fail before writing if pre-pull fails.
 - Current-state query tools must pre-pull by default. `allowStaleRead: true` may return stale workspace output with a warning. Write tools must not expose `skipPrePull`.
@@ -477,6 +481,7 @@ await replaceDocumentSvg({
 - Manifest or SVG marker `windowId` / `runtimeDocumentId` mismatch when a connection supplied that identity -> `SYNC_IDENTITY_MISMATCH`.
 - Workspace revision/hash changed since connection baseline and `conflictPolicy: "reject"` -> `SYNC_CONFLICT`.
 - Workspace revision/hash changed since connection baseline and `conflictPolicy: "merge_non_overlapping"` with overlapping element changes -> `SYNC_CONFLICT` with merge details.
+- Workspace revision/hash changed since connection baseline and `conflictPolicy: "preview_only"` -> no write; return conflict details and a preview artifact only when a conservative candidate exists.
 - Pre-pull failure before a write -> fail the write and leave `current.svg` unchanged.
 - Pre-pull failure before stale-tolerant output -> return a warning and use the existing workspace file.
 

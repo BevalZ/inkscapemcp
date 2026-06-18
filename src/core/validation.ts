@@ -61,7 +61,7 @@ export const disconnectInkscapeWindowSchema = z.object({
 export const pullGuiStateSchema = z.object({
   docId: docIdSchema,
   connectionId: connectionIdSchema.optional(),
-  conflictPolicy: z.enum(["reject", "prefer_gui", "prefer_workspace", "merge_non_overlapping"]).default("reject"),
+  conflictPolicy: z.enum(["reject", "prefer_gui", "prefer_workspace", "merge_non_overlapping", "preview_only"]).default("reject"),
   timeoutMs: z.number().int().positive().optional(),
 });
 

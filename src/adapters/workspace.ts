@@ -23,6 +23,7 @@ export interface DocumentPaths {
   metadata: string;
   historyDir: string;
   operationDiffsDir: string;
+  mergePreviewsDir: string;
   operationsLog: string;
 }
 
@@ -94,6 +95,15 @@ export interface OperationDiffArtifact {
   summary: SvgOperationDiff["summary"];
 }
 
+export interface GuiMergePreviewArtifact {
+  svgPath: string;
+  metadataPath: string;
+  generatedAt: string;
+  status: "clean" | "previewable";
+  candidateKind: "pulled_gui" | "merge_non_overlapping";
+  summary: Record<string, unknown>;
+}
+
 export interface GuiPullManifest {
   requestId: string;
   connectionId: string;
@@ -143,6 +153,7 @@ export class Workspace {
       metadata: this.resolveWithinWorkspace("drawings", docId, "metadata.json"),
       historyDir: this.resolveWithinWorkspace("drawings", docId, "history"),
       operationDiffsDir: this.resolveWithinWorkspace("drawings", docId, "operation-diffs"),
+      mergePreviewsDir: this.resolveWithinWorkspace("drawings", docId, "merge-previews"),
       operationsLog: this.resolveWithinWorkspace("drawings", docId, "operations.log"),
     };
   }
@@ -355,6 +366,36 @@ export class Workspace {
       const operationDiff = await this.createOperationDiffArtifact(paths, toolName, currentSvg, nextSvg);
       return { paths, snapshotPath, result, wrote: true, ...operationDiff };
     });
+  }
+
+  async writeGuiMergePreviewArtifact(input: {
+    docId: string;
+    requestId: string;
+    svg: string;
+    status: GuiMergePreviewArtifact["status"];
+    candidateKind: GuiMergePreviewArtifact["candidateKind"];
+    summary: Record<string, unknown>;
+  }): Promise<GuiMergePreviewArtifact> {
+    await this.ensureReady();
+    const paths = this.documentPaths(input.docId);
+    await this.assertDocumentExists(paths);
+    parseFullSvg(input.svg);
+    await mkdir(paths.mergePreviewsDir, { recursive: true });
+    const generatedAt = new Date().toISOString();
+    const artifactId = `${timestampId()}-${assertSafeRequestId(input.requestId)}`;
+    const svgPath = this.resolveWithinWorkspace("drawings", input.docId, "merge-previews", `${artifactId}.svg`);
+    const metadataPath = this.resolveWithinWorkspace("drawings", input.docId, "merge-previews", `${artifactId}.json`);
+    const artifact: GuiMergePreviewArtifact = {
+      svgPath,
+      metadataPath,
+      generatedAt,
+      status: input.status,
+      candidateKind: input.candidateKind,
+      summary: input.summary,
+    };
+    await this.atomicWrite(svgPath, input.svg);
+    await this.atomicWrite(metadataPath, `${JSON.stringify(artifact, null, 2)}\n`);
+    return artifact;
   }
 
   async listHistory(docId: string): Promise<Array<{ snapshotId: string; path: string; size: number; createdAt: string }>> {

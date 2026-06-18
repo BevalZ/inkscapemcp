@@ -375,6 +375,319 @@ describe("bidirectional GUI sync", () => {
     expect(svg).toContain("#a7f3d0");
   });
 
+  it("previews non-overlapping GUI and workspace changes without replacing current.svg", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_non_overlap", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<circle id="workspace-change" cx="5" cy="5" r="2" fill="#0f172a"/></svg>'),
+      result: {},
+    }));
+    const beforePreview = await workspace.readSvg("fish");
+    mockGuiPull(inkscape, workspace, baseSvg("#a7f3d0"));
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "previewable",
+      merge: {
+        ok: true,
+        strategy: "merge_non_overlapping",
+        appliedElementIds: expect.arrayContaining(["body", "tail"]),
+      },
+      mergePreview: {
+        svgPath: expect.stringContaining("merge-previews"),
+        metadataPath: expect.stringContaining("merge-previews"),
+        status: "previewable",
+        candidateKind: "merge_non_overlapping",
+      },
+    });
+    await expect(workspace.readSvg("fish")).resolves.toBe(beforePreview);
+    await expect(readFile(result.mergePreview?.svgPath as string, "utf8")).resolves.toContain("workspace-change");
+    await expect(readFile(result.mergePreview?.svgPath as string, "utf8")).resolves.toContain("#a7f3d0");
+  });
+
+  it("previews a clean GUI pull without replacing current.svg or advancing connection baseline", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    const beforePreview = await workspace.readSvg("fish");
+    const beforeMetadata = await workspace.readMetadata("fish");
+    const beforeConnection = await workspace.readConnection(connected.connection.connectionId);
+    mockGuiPull(inkscape, workspace, baseSvg("#a7f3d0"));
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "clean",
+      mergePreview: {
+        status: "clean",
+        candidateKind: "pulled_gui",
+        svgPath: expect.stringContaining("merge-previews"),
+      },
+    });
+    expect(result).not.toHaveProperty("conflictReport");
+    expect(result).not.toHaveProperty("merge");
+    await expect(workspace.readSvg("fish")).resolves.toBe(beforePreview);
+    await expect(readFile(result.mergePreview?.svgPath as string, "utf8")).resolves.toContain("#a7f3d0");
+    await expect(workspace.readMetadata("fish")).resolves.toMatchObject({
+      revision: beforeMetadata.revision,
+      contentHash: beforeMetadata.contentHash,
+      lastWriter: beforeMetadata.lastWriter,
+    });
+    const afterConnection = await workspace.readConnection(connected.connection.connectionId);
+    expect(afterConnection.baselineRevision).toBe(beforeConnection.baselineRevision);
+    expect(afterConnection.baselineContentHash).toBe(beforeConnection.baselineContentHash);
+    expect(afterConnection.lastPulledAt).toBe(beforeConnection.lastPulledAt);
+  });
+
+  it("reports same-attribute preview conflicts without writing current.svg", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_same_attribute", (currentSvg) => ({
+      svg: currentSvg.replace('fill="#f9a8d4"', 'fill="#22c55e"'),
+      result: {},
+    }));
+    const beforePreview = await workspace.readSvg("fish");
+    mockGuiPull(inkscape, workspace, baseSvg("#a7f3d0"));
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "conflict_only",
+      merge: {
+        ok: false,
+        conflicts: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "body",
+            reason: "overlapping_element_change",
+            classes: expect.arrayContaining(["same_attribute_changed"]),
+          }),
+        ]),
+      },
+    });
+    expect(result).not.toHaveProperty("mergePreview");
+    await expect(workspace.readSvg("fish")).resolves.toBe(beforePreview);
+  });
+
+  it("reports text preview conflicts", async () => {
+    await workspace.createDocument("label-doc", "Label", textConflictSvg("hello"));
+    const connected = await connectInkscapeWindow(
+      { docId: "label-doc", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("label-doc", "test_workspace_text", (currentSvg) => ({
+      svg: currentSvg.replace(">hello</text>", ">workspace</text>"),
+      result: {},
+    }));
+    const beforePreview = await workspace.readSvg("label-doc");
+    mockGuiPull(inkscape, workspace, textConflictSvg("gui"));
+
+    const result = await pullGuiState(
+      {
+        docId: "label-doc",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "conflict_only",
+      merge: {
+        ok: false,
+        conflicts: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "label",
+            classes: expect.arrayContaining(["text_changed_both"]),
+          }),
+        ]),
+      },
+    });
+    await expect(workspace.readSvg("label-doc")).resolves.toBe(beforePreview);
+  });
+
+  it("reports one-sided delete preview conflicts", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_delete_conflict", (currentSvg) => ({
+      svg: currentSvg.replace('id="body"', 'id="body" stroke="#111827"'),
+      result: {},
+    }));
+    mockGuiPull(inkscape, workspace, baseSvg("#f9a8d4").replace(/\s*<path id="body"[^>]+\/>\n/, ""));
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "conflict_only",
+      merge: {
+        ok: false,
+        conflicts: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "body",
+            classes: expect.arrayContaining(["element_deleted_one_side"]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("reports concurrent same-id additions in preview mode", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_add_same_id", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<circle id="shared-new" cx="5" cy="5" r="2" fill="#0f172a"/></svg>'),
+      result: {},
+    }));
+    mockGuiPull(inkscape, workspace, baseSvg("#f9a8d4", '<rect id="shared-new" x="1" y="1" width="4" height="4" fill="#facc15"/>'));
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "conflict_only",
+      merge: {
+        ok: false,
+        conflicts: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "shared-new",
+            reason: "concurrent_add_same_id",
+            classes: expect.arrayContaining(["concurrent_add_same_id"]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("reports sibling order preview conflicts", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("fish", "test_workspace_order_conflict", (currentSvg) => ({
+      svg: currentSvg.replace('id="body"', 'id="body" stroke="#111827"'),
+      result: {},
+    }));
+    mockGuiPull(inkscape, workspace, reorderedFishSvg());
+
+    const result = await pullGuiState(
+      {
+        docId: "fish",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "conflict_only",
+      merge: {
+        ok: false,
+        conflicts: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "tail",
+            reason: "gui_reorder",
+            classes: expect.arrayContaining(["sibling_order_changed"]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("reports dependency-sensitive preview conflicts", async () => {
+    await workspace.createDocument("defs-doc", "Defs", defsConflictSvg("#fff", "#000"));
+    const connected = await connectInkscapeWindow(
+      { docId: "defs-doc", syncMode: "bidirectional" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("defs-doc", "test_workspace_defs_conflict", (currentSvg) => ({
+      svg: currentSvg.replace('stroke="#000"', 'stroke="#111827"'),
+      result: {},
+    }));
+    mockGuiPull(inkscape, workspace, defsConflictSvg("#facc15", "#000"));
+
+    const result = await pullGuiState(
+      {
+        docId: "defs-doc",
+        connectionId: connected.connection.connectionId,
+        conflictPolicy: "preview_only",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      wrote: false,
+      pullStatus: "conflict_only",
+      merge: {
+        ok: false,
+        conflicts: expect.arrayContaining([
+          expect.objectContaining({
+            elementId: "paint",
+            reason: "dependency_sensitive_change",
+            classes: expect.arrayContaining(["dependency_sensitive_change"]),
+          }),
+        ]),
+      },
+    });
+  });
+
   it("rejects merge_non_overlapping when both sides change the same element", async () => {
     const connected = await connectInkscapeWindow(
       { docId: "fish", syncMode: "bidirectional" },
@@ -676,6 +989,58 @@ function baseSvg(fill: string, extra = ""): string {
   <path id="tail" d="M10 30 L1 18 L1 42 Z" fill="${fill}"/>
   ${extra}
 </svg>`;
+}
+
+function textConflictSvg(text: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="60px" viewBox="0 0 100 60">
+  <text id="label" x="10" y="20" fill="#111827">${text}</text>
+</svg>`;
+}
+
+function reorderedFishSvg(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="60px" viewBox="0 0 100 60">
+  <path id="tail" d="M10 30 L1 18 L1 42 Z" fill="#f9a8d4"/>
+  <path id="body" d="M10 30 C25 5 70 5 90 30 C70 55 25 55 10 30 Z" fill="#f9a8d4"/>
+</svg>`;
+}
+
+function defsConflictSvg(stopColor: string, stroke: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="60px" viewBox="0 0 100 60">
+  <defs>
+    <linearGradient id="paint"><stop id="paint-stop" offset="0%" stop-color="${stopColor}"/></linearGradient>
+  </defs>
+  <rect id="box" x="1" y="1" width="10" height="10" fill="url(#paint)" stroke="${stroke}"/>
+</svg>`;
+}
+
+function mockGuiPull(inkscape: InkscapeCli, workspace: Workspace, svg: string) {
+  vi.spyOn(inkscape, "pushGuiStateWithCompanionExtension").mockImplementation(async (options) => {
+    const pulled = injectInkMcpMarker(svg, {
+      connectionId: options.connectionId,
+      docId: options.docId,
+      syncMode: options.syncMode,
+      windowId: options.windowId,
+      updatedAt: new Date().toISOString(),
+    });
+    await writeFile(workspace.guiPullSvgPath(options.requestId), pulled, "utf8");
+    await writeFile(
+      workspace.guiPullManifestPath(options.requestId),
+      `${JSON.stringify({
+        requestId: options.requestId,
+        connectionId: options.connectionId,
+        requestedDocId: options.docId,
+        inferredDocId: options.docId,
+        windowId: options.windowId,
+        exportedAt: new Date().toISOString(),
+        svgPath: workspace.guiPullSvgPath(options.requestId),
+      })}\n`,
+      "utf8",
+    );
+    return { binaryPath: "inkscape", stdout: "", stderr: "", exitCode: 0 };
+  });
 }
 
 function delay(ms: number): Promise<void> {

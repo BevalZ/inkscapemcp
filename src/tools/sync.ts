@@ -35,6 +35,7 @@ import type { ToolContext } from "./context.js";
 
 const defaultConnectionTtlMs = 10 * 60 * 1000;
 const defaultPollingIntervalMs = 1_000;
+type WriteConflictPolicy = "reject" | "prefer_gui" | "prefer_workspace" | "merge_non_overlapping";
 
 export interface GuiSyncPollStatus {
   pollingId: string;
@@ -210,6 +211,27 @@ export async function pullGuiState(input: z.infer<typeof pullGuiStateSchema>, ct
   const idDiff = diffElementIds(beforeSvg, pulledSvg);
   const conflictReport = await buildConflictReport(ctx, connection, beforeSvg, pulledSvg, idDiff);
   const merge = await prepareMergeCandidate(ctx, connection, beforeSvg, pulledSvg, conflictReport.hasConflict, input.conflictPolicy);
+  const preview = input.conflictPolicy === "preview_only"
+    ? await createGuiPullPreviewArtifact(ctx, input.docId, requestId, pulledSvg, idDiff, conflictReport, merge)
+    : undefined;
+  if (preview) {
+    return {
+      ok: true,
+      docId: input.docId,
+      connectionId: connection.connectionId,
+      requestId,
+      wrote: false,
+      pullStatus: preview.status,
+      currentSvgPath: ctx.workspace.documentPaths(input.docId).currentSvg,
+      rawPulledSvgPath: ctx.workspace.guiPullSvgPath(requestId),
+      manifestPath: ctx.workspace.guiPullManifestPath(requestId),
+      idDiff,
+      ...(conflictReport.hasConflict ? { conflictReport } : {}),
+      ...(merge ? { merge } : {}),
+      ...(preview.artifact ? { mergePreview: preview.artifact } : {}),
+      inkscape: { binaryPath: inkscape.binaryPath, exitCode: inkscape.exitCode },
+    };
+  }
   if (input.conflictPolicy === "merge_non_overlapping" && merge && !merge.ok) {
     throw new InkMcpError("SYNC_CONFLICT", "GUI and workspace changes overlap and cannot be merged automatically.", {
       conflictReport,
@@ -217,7 +239,13 @@ export async function pullGuiState(input: z.infer<typeof pullGuiStateSchema>, ct
     });
   }
   const candidateSvg = merge?.ok && merge.svg ? merge.svg : pulledSvg;
-  const writePolicy = input.conflictPolicy === "merge_non_overlapping" && merge?.ok ? "merge_non_overlapping" : input.conflictPolicy;
+  const writePolicy: WriteConflictPolicy = input.conflictPolicy === "merge_non_overlapping" && merge?.ok
+    ? "merge_non_overlapping"
+    : input.conflictPolicy === "prefer_gui"
+      ? "prefer_gui"
+      : input.conflictPolicy === "prefer_workspace"
+        ? "prefer_workspace"
+        : "reject";
 
   let write: {
     paths: DocumentPaths;
@@ -602,7 +630,7 @@ async function prepareMergeCandidate(
   hasConflict: boolean,
   conflictPolicy: z.infer<typeof pullGuiStateSchema>["conflictPolicy"],
 ): Promise<(SvgMergeResult & { strategy: "merge_non_overlapping" }) | undefined> {
-  if (!hasConflict || conflictPolicy !== "merge_non_overlapping") return undefined;
+  if (!hasConflict || (conflictPolicy !== "merge_non_overlapping" && conflictPolicy !== "preview_only")) return undefined;
   const baselineSvg = await ctx.workspace.readConnectionBaselineSvg(connection.connectionId);
   const merge = mergeNonOverlappingSvgChanges({
     baselineSvg,
@@ -613,6 +641,57 @@ async function prepareMergeCandidate(
     ...merge,
     strategy: "merge_non_overlapping",
   };
+}
+
+async function createGuiPullPreviewArtifact(
+  ctx: ToolContext,
+  docId: string,
+  requestId: string,
+  pulledSvg: string,
+  idDiff: ElementIdDiff,
+  conflictReport: Record<string, unknown> & { hasConflict: boolean },
+  merge?: SvgMergeResult & { strategy: "merge_non_overlapping" },
+): Promise<{
+  status: "clean" | "previewable" | "conflict_only";
+  artifact?: import("../adapters/workspace.js").GuiMergePreviewArtifact;
+}> {
+  if (!conflictReport.hasConflict) {
+    const artifact = await ctx.workspace.writeGuiMergePreviewArtifact({
+      docId,
+      requestId,
+      svg: pulledSvg,
+      status: "clean",
+      candidateKind: "pulled_gui",
+      summary: {
+        requestId,
+        idDiff,
+        guiCandidate: conflictReport.guiCandidate,
+      },
+    });
+    return { status: "clean", artifact };
+  }
+
+  if (merge?.ok && merge.svg) {
+    const artifact = await ctx.workspace.writeGuiMergePreviewArtifact({
+      docId,
+      requestId,
+      svg: merge.svg,
+      status: "previewable",
+      candidateKind: "merge_non_overlapping",
+      summary: {
+        requestId,
+        idDiff,
+        merge: {
+          strategy: merge.strategy,
+          appliedElementIds: merge.appliedElementIds,
+        },
+        conflictReport,
+      },
+    });
+    return { status: "previewable", artifact };
+  }
+
+  return { status: "conflict_only" };
 }
 
 function metadataConflictSummary(metadata: StoredMetadata): Record<string, unknown> {
