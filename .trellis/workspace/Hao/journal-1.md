@@ -1238,3 +1238,36 @@ Added Phase 1 transform_path_points reflect transform with vertical/horizontal a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: Relative Path Node Query
+
+**Date**: 2026-06-19
+**Task**: Relative Path Node Query
+**Branch**: `main`
+
+### Summary
+
+Added Phase 1 relative normalized path-node queries for query_path_nodes and query_document, preserving read-only behavior and documenting the contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6dedab7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
