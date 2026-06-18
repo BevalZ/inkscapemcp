@@ -104,6 +104,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 18 established `validate_path_data` as a read-only raw path preflight surface. It validates one `d` string without `docId`, returns compact command/segment/editable-point summaries on success, returns typed `ok: false` validation errors on malformed or unsupported path data, supports append-style validation with `requireMoveTo: false`, and must not touch workspace files, snapshots, logs, metadata, GUI sync, or Inkscape.
 - Phase 1 loop 19 extended `transform_path_points` with `set_absolute` for exact endpoint/control-handle placement after normalized path inspection. It keeps the existing explicit point-selection boundary, maps ordered absolute target coordinates back into absolute or relative segment storage as needed, rejects selection/target mismatches before snapshot/write, and preserves the same pre-pull, snapshot, diagnostics, log, and direct `d` sync contract as translate.
 - Phase 1 loop 20 extended `transform_path_points` with `set_relative` for segment-base-relative endpoint/control-handle placement. It complements raw and absolute path-node query views, stores targets directly on relative commands, maps targets to `base + target` for absolute commands, applies edits in path order, and preserves the same validation, snapshot, diagnostics, log, and direct `d` sync boundary as other point transforms.
+- Phase 1 loop 21 extended `transform_path_points.pointSelector` with `{ type: "bbox" }` selection over absolute path-node coordinates. It keeps legacy explicit `{ points }` selectors valid, selects edge-inclusive `end`/`c1`/`c2` points from one existing path, rejects invalid or empty bbox selections before snapshot/write, and reuses the existing translate, `set_absolute`, `set_relative`, pre-pull, diagnostics, operation log, and direct `d` sync contracts after resolving the selector.
 
 ### 4. Validation & Error Matrix
 
@@ -1054,6 +1055,97 @@ await transformPathPoints({
 ```
 
 Use `set_relative` when the caller has segment-base-relative target coordinates and wants the same pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync guarantees as other point transforms.
+
+## Scenario: Path Point Bbox Selector Contract
+
+### 1. Scope / Trigger
+
+- Trigger: selecting multiple nearby path endpoints/control handles by absolute-coordinate bounds before applying `transform_path_points`.
+- Scope: one existing path element in one workspace document, using the existing `translate`, `set_absolute`, and `set_relative` transform variants.
+- Out of scope: multi-path selection, renderer hit testing, stroke-outline selection, GUI selection state, mouse/keyboard automation, selection previews, segment creation/deletion, and unsupported SVG path commands.
+
+### 2. Signatures
+
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
+- Legacy explicit selector: `{ points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- Explicit typed selector: `{ type?: "points", points: Array<{ segmentIndex: number, point: "end" | "c1" | "c2" }> }`
+- Bbox selector: `{ type: "bbox", minX: number, minY: number, maxX: number, maxY: number, pointTypes?: Array<"end" | "c1" | "c2"> }`
+- `pointTypes` defaults to `["end", "c1", "c2"]`.
+- Response includes resolved `selectedPointCount`, `selectedPoints`, `editedSegments`, `transform`, and `changed.d.from` / `changed.d.to`.
+
+### 3. Contracts
+
+- Bbox coordinates are absolute SVG user-unit coordinates derived from the same path-node inspection engine as `query_path_nodes({ normalize: "absolute" })`.
+- Points on bbox edges are included.
+- Bbox selection is deterministic and path-order based; it must not read or depend on Inkscape GUI selection.
+- The selector resolves only editable points exposed by the current path parser: `end`, `c1`, and `c2` on supported `M`, `L`, `C`, `Q`, and `Z` path commands, including relative variants.
+- Legacy `{ points }` callers remain valid without adding `type: "points"`.
+- After bbox resolution, transform behavior is identical to explicit selection. `set_absolute` and `set_relative` target counts must match the resolved selected point count.
+- Empty bbox matches fail before snapshot/write.
+- Successful writes preserve the target path element id and object tree, snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
+- Failed validation, missing path data, unsupported commands, or empty matches leave `current.svg`, history, operation logs, operation-diff artifacts, and Inkscape refresh untouched.
+
+### 4. Validation & Error Matrix
+
+- `minX`, `minY`, `maxX`, or `maxY` non-finite -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- `minX > maxX` or `minY > maxY` -> schema validation failure or `INVALID_INPUT`, no snapshot/write.
+- Empty `pointTypes` -> schema validation failure, no pre-pull or write.
+- Bbox matches zero editable points -> `INVALID_INPUT`, no snapshot/write.
+- Missing target element, non-path target, or missing `d` -> `INVALID_INPUT`, no snapshot/write.
+- Unsupported path command such as `A`, `S`, `T`, `H`, or `V` -> existing `INVALID_INPUT` parser error, no snapshot/write.
+- `set_absolute` or `set_relative` target count mismatch after bbox resolution -> `INVALID_INPUT`, no snapshot/write.
+- Active bidirectional pre-pull failure -> sync/Inkscape error, no MCP write.
+
+### 5. Good/Base/Bad Cases
+
+- Good: select all mouth endpoints and first control handles in a small absolute bbox, then translate them left in one call.
+- Good: select only `end` points inside a bbox and apply `set_absolute` with the same number of target points.
+- Base: caller already knows exact segment indexes; use the legacy explicit `{ points }` selector.
+- Bad: using current Inkscape GUI selection to decide which nodes to edit.
+- Bad: replacing the whole SVG document because several nearby handles need the same transform.
+
+### 6. Tests Required
+
+- Schema tests accept legacy explicit selectors, typed explicit selectors, and bbox selectors with defaulted `pointTypes`.
+- Schema tests reject non-finite or inverted bbox bounds and empty `pointTypes`.
+- Core tests prove bbox selection uses absolute coordinates, includes edge points, supports relative path commands, and returns resolved `selectedPoints`.
+- Core tests prove bbox `set_absolute` and `set_relative` reject target-count mismatches after selector resolution.
+- Core tests prove empty bbox selections throw before returning a mutated SVG.
+- Tool-level tests prove successful bbox transforms snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests prove empty bbox selections leave `current.svg` and history unchanged and do not call Inkscape sync/refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: getCurrentGuiNodeSelection(),
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+#### Correct
+
+```typescript
+await transformPathPoints({
+  docId,
+  elementId: "mouth",
+  pointSelector: {
+    type: "bbox",
+    minX: 108,
+    minY: 32,
+    maxX: 142,
+    maxY: 48,
+    pointTypes: ["end", "c1"],
+  },
+  transform: { type: "translate", dx: -2, dy: 0 },
+});
+```
+
+Use bbox selection when the caller knows an absolute SVG coordinate region but not every segment index. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
 ## Phase Summary
 

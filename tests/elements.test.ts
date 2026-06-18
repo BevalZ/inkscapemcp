@@ -477,6 +477,55 @@ describe("element tools", () => {
     expect(history[0].snapshotId).toContain("transform_path_points");
   });
 
+  it("transforms bbox-selected path points with direct active-window attribute sync", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "sync-doc",
+        elementId: "mouth",
+        pointSelector: {
+          type: "bbox",
+          minX: 118,
+          minY: 21,
+          maxX: 141,
+          maxY: 34,
+          pointTypes: ["end", "c1"],
+        },
+        transform: { type: "translate", dx: -4, dy: 2 },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "mouth", attributeName: "d", value: "M100 30 c14 6 31 1 37 -7" }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "mouth",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "c1" },
+        { segmentIndex: 1, point: "end" },
+      ],
+      editedSegments: [1],
+      changed: { d: { from: "M100 30c18 4 31 1 41-9", to: "M100 30 c14 6 31 1 37 -7" } },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+    });
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30 c14 6 31 1 37 -7"');
+    const history = await workspace.listHistory("sync-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
   it("rejects invalid point transforms without writing history", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
 
@@ -534,6 +583,34 @@ describe("element tools", () => {
         { workspace, inkscape, autoRefresh: { enabled: true } },
       ),
     ).rejects.toThrow("c2");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
+  });
+
+  it("rejects empty bbox-selected path transforms without writing history", async () => {
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "sync-doc",
+          elementId: "mouth",
+          pointSelector: {
+            type: "bbox",
+            minX: 1,
+            minY: 1,
+            maxX: 2,
+            maxY: 2,
+          },
+          transform: { type: "translate", dx: 1, dy: 0 },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("matched no editable points");
 
     expect(sync).not.toHaveBeenCalled();
     expect(companion).not.toHaveBeenCalled();

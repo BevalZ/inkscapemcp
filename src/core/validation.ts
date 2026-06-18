@@ -211,25 +211,52 @@ const pathPointSelectionSchema = z.object({
   point: z.enum(["end", "c1", "c2"]),
 });
 
+const explicitPathPointSelectorSchema = z.object({
+  type: z.literal("points").optional(),
+  points: z.array(pathPointSelectionSchema).min(1),
+}).superRefine((selector, ctx) => {
+  const seen = new Set<string>();
+  for (const point of selector.points) {
+    const key = `${point.segmentIndex}:${point.point}`;
+    if (seen.has(key)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Path point selection must not contain duplicates.",
+        path: ["points"],
+      });
+    }
+    seen.add(key);
+  }
+});
+
+const pathPointBboxSelectorSchema = z.object({
+  type: z.literal("bbox"),
+  minX: z.number().finite(),
+  minY: z.number().finite(),
+  maxX: z.number().finite(),
+  maxY: z.number().finite(),
+  pointTypes: z.array(z.enum(["end", "c1", "c2"])).min(1).default(["end", "c1", "c2"]),
+}).superRefine((selector, ctx) => {
+  if (selector.minX > selector.maxX) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Path point bbox selector minX must be less than or equal to maxX.",
+      path: ["minX"],
+    });
+  }
+  if (selector.minY > selector.maxY) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Path point bbox selector minY must be less than or equal to maxY.",
+      path: ["minY"],
+    });
+  }
+});
+
 export const transformPathPointsSchema = z.object({
   docId: docIdSchema,
   elementId: elementIdSchema,
-  pointSelector: z.object({
-    points: z.array(pathPointSelectionSchema).min(1),
-  }).superRefine((selector, ctx) => {
-    const seen = new Set<string>();
-    for (const point of selector.points) {
-      const key = `${point.segmentIndex}:${point.point}`;
-      if (seen.has(key)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Path point selection must not contain duplicates.",
-          path: ["points"],
-        });
-      }
-      seen.add(key);
-    }
-  }),
+  pointSelector: z.union([pathPointBboxSelectorSchema, explicitPathPointSelectorSchema]),
   transform: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("translate"),
@@ -261,6 +288,7 @@ export const transformPathPointsSchema = z.object({
   }),
 }).superRefine((input, ctx) => {
   if (input.transform.type !== "set_absolute" && input.transform.type !== "set_relative") return;
+  if (input.pointSelector.type === "bbox") return;
   if (input.transform.points.length !== input.pointSelector.points.length) {
     ctx.addIssue({
       code: "custom",

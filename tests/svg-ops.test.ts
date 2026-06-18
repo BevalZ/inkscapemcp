@@ -451,6 +451,99 @@ describe("SVG operations", () => {
     expect(result.result.nextD).toBe("M10 10 l10 15 c2 3 4 5 13 10");
   });
 
+  it("transforms bbox-selected path points using absolute point coordinates", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "bbox",
+        minX: 15,
+        minY: 10,
+        maxX: 22,
+        maxY: 18,
+        pointTypes: ["end", "c1"],
+      },
+      transform: { type: "translate", dx: 1, dy: -2 },
+    });
+
+    expect(result.result).toMatchObject({
+      elementId: "editable-path",
+      previousD: "M10 10 l5 1 c2 3 4 5 6 7 q1 -2 3 0",
+      nextD: "M10 10 l6 -1 c3 1 4 5 7 5 q2 -4 3 0",
+      selectedPointCount: 4,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "c1" },
+        { segmentIndex: 2, point: "end" },
+        { segmentIndex: 3, point: "c1" },
+      ],
+      editedSegments: [1, 2, 3],
+    });
+  });
+
+  it("applies set_absolute to bbox-selected points when target counts match", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M10 10 L20 20 L30 30",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const result = transformPathPointsInSvg(svg, {
+      elementId: "editable-path",
+      pointSelector: {
+        type: "bbox",
+        minX: 19,
+        minY: 19,
+        maxX: 31,
+        maxY: 31,
+        pointTypes: ["end"],
+      },
+      transform: {
+        type: "set_absolute",
+        points: [
+          { x: 21, y: 19 },
+          { x: 32, y: 28 },
+        ],
+      },
+    });
+
+    expect(result.result).toMatchObject({
+      nextD: "M10 10 L21 19 L32 28",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+    });
+  });
+
+  it("rejects bbox selectors that match no editable points", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "editable-path",
+      d: "M1 1 L2 2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "editable-path",
+        pointSelector: {
+          type: "bbox",
+          minX: 50,
+          minY: 50,
+          maxX: 60,
+          maxY: 60,
+        },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("matched no editable points");
+  });
+
   it("rejects set_absolute when target point count does not match the selection", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "editable-path",

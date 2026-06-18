@@ -107,6 +107,20 @@ export interface PathPointSelection {
   point: EditablePathPoint;
 }
 
+export type PathPointSelector =
+  | {
+      type?: "points";
+      points: PathPointSelection[];
+    }
+  | {
+      type: "bbox";
+      minX: number;
+      minY: number;
+      maxX: number;
+      maxY: number;
+      pointTypes?: EditablePathPoint[];
+    };
+
 export interface TransformPathPointsResult extends PathDataEditResult {
   selectedPointCount: number;
   selectedPoints: PathPointSelection[];
@@ -296,9 +310,7 @@ export function transformPathPointsInSvg(
   svg: string,
   input: {
     elementId: string;
-    pointSelector: {
-      points: PathPointSelection[];
-    };
+    pointSelector: PathPointSelector;
     transform: PathPointTransform;
   },
 ): { svg: string; result: TransformPathPointsResult } {
@@ -309,7 +321,9 @@ export function transformPathPointsInSvg(
   if (!previousD) {
     throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
   }
-  const edits = pathPointTransformEdits(input.pointSelector.points, input.transform);
+  const selectedPoints = resolvePathPointSelector(previousD, input.pointSelector);
+  validateResolvedPathPointTransform(selectedPoints, input.transform);
+  const edits = pathPointTransformEdits(selectedPoints, input.transform);
   const nextD = applyPathNodeEdits(previousD, edits);
   element.setAttribute("d", nextD);
   return {
@@ -318,9 +332,9 @@ export function transformPathPointsInSvg(
       elementId: input.elementId,
       previousD,
       nextD,
-      selectedPointCount: input.pointSelector.points.length,
-      selectedPoints: input.pointSelector.points,
-      editedSegments: [...new Set(input.pointSelector.points.map((point) => point.segmentIndex))],
+      selectedPointCount: selectedPoints.length,
+      selectedPoints,
+      editedSegments: [...new Set(selectedPoints.map((point) => point.segmentIndex))],
       transform: input.transform,
     },
   };
@@ -575,14 +589,27 @@ function findPathElement(document: XmlDocument, elementId: string): XmlElement {
 }
 
 function validateTransformPathPointsInput(input: {
-  pointSelector: { points: PathPointSelection[] };
+  pointSelector: PathPointSelector;
   transform: PathPointTransform;
 }): void {
-  if (input.pointSelector.points.length === 0) {
+  if (input.pointSelector.type === "bbox") {
+    validatePathPointBboxSelector(input.pointSelector);
+  } else {
+    validateExplicitPathPointSelector(input.pointSelector);
+  }
+
+  validatePathPointTransform(input.transform);
+  if (input.pointSelector.type !== "bbox" && input.transform.type !== "translate") {
+    validateResolvedPathPointTransform(input.pointSelector.points, input.transform);
+  }
+}
+
+function validateExplicitPathPointSelector(selector: Extract<PathPointSelector, { type?: "points" }>): void {
+  if (selector.points.length === 0) {
     throw new InkMcpError("INVALID_INPUT", "Path point selection must not be empty.");
   }
   const selectedPoints = new Set<string>();
-  for (const point of input.pointSelector.points) {
+  for (const point of selector.points) {
     const key = `${point.segmentIndex}:${point.point}`;
     if (selectedPoints.has(key)) {
       throw new InkMcpError("INVALID_INPUT", "Path point selection must not contain duplicates.", {
@@ -592,30 +619,88 @@ function validateTransformPathPointsInput(input: {
     }
     selectedPoints.add(key);
   }
-  if (input.transform.type === "translate") {
-    if (!Number.isFinite(input.transform.dx) || !Number.isFinite(input.transform.dy)) {
+}
+
+function validatePathPointTransform(transform: PathPointTransform): void {
+  if (transform.type === "translate") {
+    if (!Number.isFinite(transform.dx) || !Number.isFinite(transform.dy)) {
       throw new InkMcpError("INVALID_INPUT", "Translate transform deltas must be finite.", {
-        dx: input.transform.dx,
-        dy: input.transform.dy,
+        dx: transform.dx,
+        dy: transform.dy,
       });
     }
-    if (input.transform.dx === 0 && input.transform.dy === 0) {
+    if (transform.dx === 0 && transform.dy === 0) {
       throw new InkMcpError("INVALID_INPUT", "Translate transform must move at least one axis.");
     }
     return;
   }
 
-  if (input.transform.points.length !== input.pointSelector.points.length) {
-    throw new InkMcpError("INVALID_INPUT", `${input.transform.type} target point count must match selected point count.`, {
-      selectedPointCount: input.pointSelector.points.length,
-      targetPointCount: input.transform.points.length,
-    });
-  }
-  for (const point of input.transform.points) {
+  for (const point of transform.points) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-      throw new InkMcpError("INVALID_INPUT", `${input.transform.type} target coordinates must be finite.`, point);
+      throw new InkMcpError("INVALID_INPUT", `${transform.type} target coordinates must be finite.`, point);
     }
   }
+}
+
+function validateResolvedPathPointTransform(points: PathPointSelection[], transform: PathPointTransform): void {
+  if (transform.type === "translate") return;
+  if (transform.points.length !== points.length) {
+    throw new InkMcpError("INVALID_INPUT", `${transform.type} target point count must match selected point count.`, {
+      selectedPointCount: points.length,
+      targetPointCount: transform.points.length,
+    });
+  }
+}
+
+function validatePathPointBboxSelector(selector: Extract<PathPointSelector, { type: "bbox" }>): void {
+  if (
+    !Number.isFinite(selector.minX) ||
+    !Number.isFinite(selector.minY) ||
+    !Number.isFinite(selector.maxX) ||
+    !Number.isFinite(selector.maxY)
+  ) {
+    throw new InkMcpError("INVALID_INPUT", "Path point bbox selector coordinates must be finite.", selector);
+  }
+  if (selector.minX > selector.maxX || selector.minY > selector.maxY) {
+    throw new InkMcpError("INVALID_INPUT", "Path point bbox selector bounds are invalid.", {
+      minX: selector.minX,
+      minY: selector.minY,
+      maxX: selector.maxX,
+      maxY: selector.maxY,
+    });
+  }
+}
+
+function resolvePathPointSelector(pathData: string, selector: PathPointSelector): PathPointSelection[] {
+  if (selector.type !== "bbox") return selector.points;
+
+  const allowedPointTypes = new Set(selector.pointTypes ?? ["end", "c1", "c2"]);
+  const selected: PathPointSelection[] = [];
+  for (const segment of describeEditablePathData(pathData)) {
+    for (const point of segment.availablePoints) {
+      if (!allowedPointTypes.has(point)) continue;
+      const absolutePoint = segment.absolutePoints[point];
+      if (!absolutePoint) continue;
+      if (
+        absolutePoint.x >= selector.minX &&
+        absolutePoint.x <= selector.maxX &&
+        absolutePoint.y >= selector.minY &&
+        absolutePoint.y <= selector.maxY
+      ) {
+        selected.push({ segmentIndex: segment.index, point });
+      }
+    }
+  }
+  if (selected.length === 0) {
+    throw new InkMcpError("INVALID_INPUT", "Path point bbox selector matched no editable points.", {
+      minX: selector.minX,
+      minY: selector.minY,
+      maxX: selector.maxX,
+      maxY: selector.maxY,
+      pointTypes: [...allowedPointTypes],
+    });
+  }
+  return selected;
 }
 
 function pathPointTransformEdits(points: PathPointSelection[], transform: PathPointTransform): PathNodeEdit[] {

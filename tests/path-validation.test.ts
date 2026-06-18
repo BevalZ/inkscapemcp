@@ -159,6 +159,68 @@ describe("path tool validation", () => {
     ).toThrow("at least one axis");
   });
 
+  it("accepts bbox point selectors and rejects invalid bbox bounds", () => {
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "bbox",
+          minX: 10,
+          minY: 11,
+          maxX: 20,
+          maxY: 21,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "bbox",
+        minX: 10,
+        minY: 11,
+        maxX: 20,
+        maxY: 21,
+        pointTypes: ["end", "c1", "c2"],
+      },
+    });
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "bbox",
+          minX: 10,
+          minY: 11,
+          maxX: 20,
+          maxY: 21,
+          pointTypes: ["end"],
+        },
+        transform: { type: "set_relative", points: [{ x: 1, y: 2 }] },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "bbox",
+        pointTypes: ["end"],
+      },
+    });
+
+    expect(() =>
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "bbox",
+          minX: 20,
+          minY: 11,
+          maxX: 10,
+          maxY: 21,
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toThrow("minX");
+  });
+
   it("accepts set_absolute and set_relative point transforms and rejects mismatched target counts", () => {
     expect(
       transformPathPointsSchema.parse({
