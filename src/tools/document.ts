@@ -902,12 +902,16 @@ export async function recoverDocument(input: z.infer<typeof recoverDocumentSchem
   if (!input.confirmDiscardGuiState) {
     await ensureNoActiveBidirectionalConnectionForRollback(ctx, input.docId);
   }
-  const result = await ctx.workspace.rollback(input.docId, input.snapshotId, "recover_document");
+  const resolvedRecovery = await resolveRecoverySnapshot(input, ctx);
+  const result = await ctx.workspace.rollback(input.docId, resolvedRecovery.snapshotId, "recover_document");
   await appendOperationLog(result.paths, {
     level: "info",
     docId: input.docId,
     toolName: "recover_document",
-    inputSummary: { snapshotId: input.snapshotId },
+    inputSummary: {
+      snapshotId: resolvedRecovery.snapshotId,
+      ...(resolvedRecovery.strategy ? { strategy: resolvedRecovery.strategy } : {}),
+    },
     snapshotPath: result.snapshotPath,
     status: "ok",
   });
@@ -915,11 +919,42 @@ export async function recoverDocument(input: z.infer<typeof recoverDocumentSchem
   return withGuiRefreshResult({
     ok: true,
     docId: input.docId,
-    recoveredFromSnapshotId: input.snapshotId,
+    recoveredFromSnapshotId: resolvedRecovery.snapshotId,
+    ...(resolvedRecovery.strategy ? { strategy: resolvedRecovery.strategy } : {}),
     preRecoverySnapshotPath: result.snapshotPath,
     restoredPath: result.restoredPath,
     currentSvgPath: result.paths.currentSvg,
   }, refresh);
+}
+
+async function resolveRecoverySnapshot(
+  input: z.infer<typeof recoverDocumentSchema>,
+  ctx: ToolContext,
+): Promise<{ snapshotId: string; strategy?: "last_snapshot" }> {
+  if (input.snapshotId) {
+    return { snapshotId: input.snapshotId };
+  }
+  if (input.strategy === "last_snapshot") {
+    const history = await ctx.workspace.listHistory(input.docId);
+    const latest = latestHistorySnapshot(history);
+    if (!latest) {
+      throw new InkMcpError("DOC_NOT_FOUND", "No history snapshot is available for recovery.", {
+        strategy: input.strategy,
+      });
+    }
+    return { snapshotId: latest.snapshotId, strategy: input.strategy };
+  }
+  throw new InkMcpError("INVALID_INPUT", "Provide either snapshotId or a supported recovery strategy.");
+}
+
+function latestHistorySnapshot<T extends { snapshotId: string; createdAt: string }>(history: T[]): T | undefined {
+  return history.reduce<T | undefined>((latest, snapshot) => {
+    if (!latest) return snapshot;
+    const byCreatedAt = snapshot.createdAt.localeCompare(latest.createdAt);
+    if (byCreatedAt > 0) return snapshot;
+    if (byCreatedAt === 0 && snapshot.snapshotId.localeCompare(latest.snapshotId) > 0) return snapshot;
+    return latest;
+  }, undefined);
 }
 
 export async function archiveDocument(input: z.infer<typeof archiveDocumentSchema>, ctx: ToolContext) {

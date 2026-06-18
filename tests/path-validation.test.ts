@@ -9,9 +9,48 @@ import {
   replacePathDataSchema,
   transformPathPointsSchema,
   validatePathDataSchema,
+  recoverDocumentSchema,
 } from "../src/core/validation.js";
 
 describe("path tool validation", () => {
+  it("accepts recover_document snapshot or last-snapshot strategy and rejects ambiguous recovery inputs", () => {
+    expect(
+      recoverDocumentSchema.parse({
+        docId: "recover-doc",
+        snapshotId: "20260619-010203-recover_document",
+      }),
+    ).toMatchObject({
+      docId: "recover-doc",
+      snapshotId: "20260619-010203-recover_document",
+      confirmDiscardGuiState: false,
+    });
+
+    expect(
+      recoverDocumentSchema.parse({
+        docId: "recover-doc",
+        strategy: "last_snapshot",
+      }),
+    ).toMatchObject({
+      docId: "recover-doc",
+      strategy: "last_snapshot",
+      confirmDiscardGuiState: false,
+    });
+
+    expect(() =>
+      recoverDocumentSchema.parse({
+        docId: "recover-doc",
+      }),
+    ).toThrow("Provide either snapshotId or strategy");
+
+    expect(() =>
+      recoverDocumentSchema.parse({
+        docId: "recover-doc",
+        snapshotId: "20260619-010203-recover_document",
+        strategy: "last_snapshot",
+      }),
+    ).toThrow("not both");
+  });
+
   it("requires exactly one path source for draw_path", () => {
     expect(() =>
       drawPathSchema.parse({

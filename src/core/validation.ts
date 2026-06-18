@@ -709,8 +709,24 @@ export const rollbackDocumentSchema = z.object({
 
 export const recoverDocumentSchema = z.object({
   docId: docIdSchema,
-  snapshotId: z.string().min(1),
+  snapshotId: z.string().min(1).optional(),
+  strategy: z.enum(["last_snapshot"]).optional(),
   confirmDiscardGuiState: z.boolean().default(false),
+}).superRefine((input, ctx) => {
+  if (input.snapshotId && input.strategy) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Provide either snapshotId or strategy, not both.",
+      path: ["strategy"],
+    });
+  }
+  if (!input.snapshotId && !input.strategy) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Provide either snapshotId or strategy.",
+      path: ["snapshotId"],
+    });
+  }
 });
 
 export const archiveDocumentSchema = z.object({

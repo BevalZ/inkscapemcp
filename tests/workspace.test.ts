@@ -204,6 +204,91 @@ describe("workspace", () => {
     expect(log).not.toContain(brokenSvg);
   });
 
+  it("recovers from the latest history snapshot by strategy", async () => {
+    const svg = createSvgDocument({ title: "Recover latest", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-latest-doc", "Recover latest", svg);
+    await createCheckpoint(
+      { docId: "recover-latest-doc", label: "First good" },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const secondSvg = svg.replace("</svg>", '<rect id="latest-good" x="2" y="2" width="5" height="5"/></svg>');
+    await replaceDocumentSvg(
+      { docId: "recover-latest-doc", svg: secondSvg, confirmFullDocumentReplacement: true },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    await createCheckpoint(
+      { docId: "recover-latest-doc", label: "Latest good" },
+      { workspace, inkscape: new InkscapeCli(), autoRefresh: { enabled: false } },
+    );
+    await workspace.writeSvgWithSnapshot("recover-latest-doc", "break_doc", (currentSvg) => ({
+      svg: currentSvg.replace("</svg>", '<circle id="bad-latest-edit" cx="5" cy="5" r="3"/></svg>'),
+      result: {},
+    }));
+    const brokenSvg = await workspace.readSvg("recover-latest-doc");
+    expect(brokenSvg).toContain("latest-good");
+    expect(brokenSvg).toContain("bad-latest-edit");
+    const historyBeforeRecovery = await workspace.listHistory("recover-latest-doc");
+    const latestSnapshotBeforeRecovery = historyBeforeRecovery.reduce((latest, snapshot) => {
+      const byCreatedAt = snapshot.createdAt.localeCompare(latest.createdAt);
+      if (byCreatedAt > 0) return snapshot;
+      if (byCreatedAt === 0 && snapshot.snapshotId.localeCompare(latest.snapshotId) > 0) return snapshot;
+      return latest;
+    });
+    const inkscape = new InkscapeCli();
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    const result = await recoverDocument(
+      { docId: "recover-latest-doc", strategy: "last_snapshot", confirmDiscardGuiState: false },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(companion).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "recover-latest-doc",
+      strategy: "last_snapshot",
+      recoveredFromSnapshotId: latestSnapshotBeforeRecovery.snapshotId,
+      preRecoverySnapshotPath: expect.stringContaining("recover_document"),
+      restoredPath: latestSnapshotBeforeRecovery.path,
+    });
+    await expect(workspace.readSvg("recover-latest-doc")).resolves.toContain("latest-good");
+    await expect(workspace.readSvg("recover-latest-doc")).resolves.not.toContain("bad-latest-edit");
+    await expect(readFile(result.preRecoverySnapshotPath, "utf8")).resolves.toBe(brokenSvg);
+
+    const log = await readFile(workspace.documentPaths("recover-latest-doc").operationsLog, "utf8");
+    expect(log).toContain('"toolName":"recover_document"');
+    expect(log).toContain('"strategy":"last_snapshot"');
+    expect(log).toContain(`"snapshotId":"${latestSnapshotBeforeRecovery.snapshotId}"`);
+  });
+
+  it("rejects last-snapshot recovery when history is empty without side effects", async () => {
+    const svg = createSvgDocument({ title: "Recover empty", width: 100, height: 100, unit: "px" });
+    await workspace.createDocument("recover-empty-doc", "Recover empty", svg);
+    const before = await workspace.readSvg("recover-empty-doc");
+    const inkscape = new InkscapeCli();
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      recoverDocument(
+        { docId: "recover-empty-doc", strategy: "last_snapshot", confirmDiscardGuiState: false },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toMatchObject({ code: "DOC_NOT_FOUND" });
+
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.readSvg("recover-empty-doc")).resolves.toBe(before);
+    await expect(workspace.listHistory("recover-empty-doc")).resolves.toEqual([]);
+    await expect(readFile(workspace.documentPaths("recover-empty-doc").operationsLog, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("rejects missing and unsafe recovery snapshots without changing current SVG", async () => {
     const svg = createSvgDocument({ title: "Recover rejects", width: 100, height: 100, unit: "px" });
     await workspace.createDocument("recover-reject-doc", "Recover rejects", svg);
