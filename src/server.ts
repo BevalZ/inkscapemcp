@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   addElementSchema,
   applyIdRepairsSchema,
+  applyMergePreviewSchema,
   appendPathSegmentSchema,
   applyOperationPreviewSchema,
   applySvgOperationsSchema,
@@ -107,6 +108,7 @@ import { runAllowedAction, runPathDifference, runPathGeometry } from "./tools/ge
 import { listCurrentSvgResources, listPreviewPngResources, readArtifactResource } from "./tools/resources.js";
 import { vectorizeBitmap } from "./tools/vectorize.js";
 import {
+  applyMergePreview,
   connectInkscapeWindow,
   disconnectInkscapeWindow,
   getGuiSyncStatus,
@@ -203,6 +205,16 @@ export function createServer() {
       inputSchema: readMergePreviewSchema,
     },
     (input) => runTool("read_merge_preview", () => readMergePreview(input, ctx)),
+  );
+
+  server.registerTool(
+    "apply_merge_preview",
+    {
+      title: "Apply merge preview",
+      description: "Apply a saved GUI merge preview artifact after explicit confirmation and stale-baseline checks.",
+      inputSchema: applyMergePreviewSchema,
+    },
+    (input) => runTool("apply_merge_preview", () => applyMergePreview(input, ctx)),
   );
 
   server.registerTool(

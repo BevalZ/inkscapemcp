@@ -144,11 +144,13 @@ export interface OperationPreviewArtifactSummary {
 
 export interface GuiMergePreviewArtifact {
   previewId?: string;
+  docId?: string;
   svgPath: string;
   metadataPath: string;
   generatedAt: string;
   status: "clean" | "previewable";
   candidateKind: "pulled_gui" | "merge_non_overlapping";
+  baseline?: { revision: number; contentHash: string };
   summary: Record<string, unknown>;
 }
 
@@ -160,6 +162,7 @@ export interface GuiMergePreviewArtifactSummary {
   generatedAt: string;
   status: GuiMergePreviewArtifact["status"];
   candidateKind: GuiMergePreviewArtifact["candidateKind"];
+  baseline?: { revision: number; contentHash: string };
   summary: Record<string, unknown>;
 }
 
@@ -461,6 +464,7 @@ export class Workspace {
     svg: string;
     status: GuiMergePreviewArtifact["status"];
     candidateKind: GuiMergePreviewArtifact["candidateKind"];
+    baseline?: { revision: number; contentHash: string };
     summary: Record<string, unknown>;
   }): Promise<GuiMergePreviewArtifact> {
     await this.ensureReady();
@@ -474,11 +478,13 @@ export class Workspace {
     const metadataPath = this.resolveWithinWorkspace("drawings", input.docId, "merge-previews", `${artifactId}.json`);
     const artifact: GuiMergePreviewArtifact = {
       previewId: artifactId,
+      docId: input.docId,
       svgPath,
       metadataPath,
       generatedAt,
       status: input.status,
       candidateKind: input.candidateKind,
+      ...(input.baseline ? { baseline: input.baseline } : {}),
       summary: input.summary,
     };
     await this.atomicWrite(svgPath, input.svg);
@@ -543,6 +549,36 @@ export class Workspace {
     });
     parseFullSvg(svg);
     return { metadata, svg };
+  }
+
+  async writeGuiMergePreviewWithSnapshot(
+    docId: string,
+    previewId: string,
+    baseline: { revision: number; contentHash: string },
+    nextSvg: string,
+    createResult: (currentSvg: string, nextSvg: string) => Record<string, unknown>,
+    options?: { beforeSnapshot?: (currentSvg: string) => Promise<void> | void },
+  ) {
+    return this.withDocumentWriteLock(docId, async (paths) => {
+      await this.assertDocumentExists(paths);
+      const currentSvg = await readFile(paths.currentSvg, "utf8");
+      await options?.beforeSnapshot?.(currentSvg);
+      const currentMetadata = await this.readMetadata(docId);
+      if (currentMetadata.revision !== baseline.revision || currentMetadata.contentHash !== baseline.contentHash) {
+        throw new InkMcpError("SYNC_CONFLICT", "Workspace document changed since the merge preview baseline.", {
+          previewId,
+          expectedBase: baseline,
+          actual: { revision: currentMetadata.revision, contentHash: currentMetadata.contentHash },
+        });
+      }
+      const snapshotPath = await this.createSnapshot(paths, "apply_merge_preview", currentSvg);
+      parseFullSvg(nextSvg);
+      await this.atomicWrite(paths.currentSvg, nextSvg);
+      await this.touchMetadata(paths, nextSvg, "mcp");
+      const operationDiff = await this.createOperationDiffArtifact(paths, "apply_merge_preview", currentSvg, nextSvg);
+      const result = createResult(currentSvg, nextSvg);
+      return { paths, snapshotPath, result, ...operationDiff };
+    });
   }
 
   async writeOperationPreviewArtifact(input: {
@@ -1091,6 +1127,13 @@ function compactGuiMergePreviewArtifact(
       artifactPreviewId: artifact.previewId,
     });
   }
+  if (artifact.docId && artifact.docId !== docId) {
+    throw new InkMcpError("INVALID_INPUT", "Merge preview metadata does not match the requested document id.", {
+      docId,
+      artifactDocId: artifact.docId,
+      previewId,
+    });
+  }
   if (path.resolve(artifact.svgPath) !== path.resolve(expectedSvgPath)) {
     throw new InkMcpError("INVALID_INPUT", "Merge preview metadata does not match the requested document.", {
       docId,
@@ -1113,6 +1156,7 @@ function compactGuiMergePreviewArtifact(
     generatedAt: artifact.generatedAt,
     status: artifact.status,
     candidateKind: artifact.candidateKind,
+    ...(artifact.baseline ? { baseline: artifact.baseline } : {}),
     summary: artifact.summary,
   };
 }

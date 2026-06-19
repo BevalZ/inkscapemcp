@@ -29,6 +29,10 @@ export const docIdSchema = z.string().refine((value) => {
 export const attributeValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 export const attributesSchema = z.record(z.string(), attributeValueSchema).default({});
 const elementIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_.:-]*$/);
+const documentBaselineSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  contentHash: z.string().min(1),
+});
 
 export const createDocumentSchema = z.object({
   docId: docIdSchema.optional(),
@@ -98,6 +102,14 @@ export const readMergePreviewSchema = z.object({
   docId: docIdSchema,
   previewId: z.string().min(1),
   includeSvg: z.boolean().default(false),
+});
+
+export const applyMergePreviewSchema = z.object({
+  docId: docIdSchema,
+  previewId: z.string().min(1),
+  baseline: documentBaselineSchema.optional(),
+  confirmApplyPreview: z.boolean().default(false),
+  responseMode: z.enum(["compact", "full"]).default("compact"),
 });
 
 export const addElementSchema = z.object({
@@ -527,10 +539,7 @@ export const previewSvgOperationsSchema = z.object({
   previewLabel: z.string().trim().min(1).max(80).optional(),
 });
 
-const operationReplayBaselineSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  contentHash: z.string().min(1),
-});
+const operationReplayBaselineSchema = documentBaselineSchema;
 
 export const replayOperationsSchema = z.object({
   docId: docIdSchema,

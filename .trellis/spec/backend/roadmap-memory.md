@@ -123,6 +123,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 37 added exact failure diagnostics to `validate_path_data`. Malformed or unsupported raw path data now reports actionable details when available, including command, command index, command token index, segment index, expected/actual/missing parameter counts, token index, source offset, and invalid text snippets. The tool remains read-only, no-`docId`, no-workspace, no-log, no-refresh, and append-style diagnostics use segment indexes local to the supplied fragment.
 - Phase 1 loop 38 strengthened `diagnose_inkscape_gui` with a read-only companion extension self-check. Diagnostics now report installed file presence for both `.inx` files, `inksmcp_pull.py`, and `inksmcp-extension.json`; validate pull/push extension ids, derived active-window action ids, hidden action parameters, Python command declarations, config JSON shape, and configured `workspaceRoot`; and compare the configured root to the current MCP workspace. Missing files, stale declarations, invalid config, missing roots, and mismatched workspace roots produce structured warnings/remediation while preserving the no-snapshot/no-log/no-refresh diagnostic boundary.
 - Phase 1 loop 39 added an in-process monotonic `generation` to explicit GUI sync polling. `start_gui_sync_polling` and restored persisted polling entries assign a positive runtime generation, `get_gui_sync_status` exposes it for diagnostics, and timer callbacks carry their creation generation and no-op if the current registry entry is missing, stopped, or from a newer generation. Generation is not written to `.polling.json`; it only guards the current MCP server process against stale queued callbacks after stop/restart/reload.
+- Phase 1 loop 40 established `apply_merge_preview` as the explicit mutation boundary for saved GUI merge preview artifacts. It requires `confirmApplyPreview: true`, applies only artifacts under `workspace/drawings/{docId}/merge-previews/`, records/uses artifact baselines when available, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg`, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh. `list_merge_previews` and `read_merge_preview` remain read-only inspection tools.
 
 ### 4. Validation & Error Matrix
 
@@ -444,7 +445,7 @@ Use the apply tool so confirmation, bidirectional pre-pull, conflict validation,
 
 - Trigger: inspecting saved GUI merge preview artifacts after `pull_gui_state({ conflictPolicy: "preview_only" })`.
 - Scope: `list_merge_previews`, `read_merge_preview`, and `workspace/drawings/{docId}/merge-previews/` artifacts.
-- Out of scope: applying merge previews, deleting/pruning artifacts, saving merge previews outside GUI pull preview mode, cross-document reads, and changing merge conflict classes.
+- Out of scope: applying merge previews from the read/list tools, deleting/pruning artifacts, saving merge previews outside GUI pull preview mode, cross-document reads, and changing merge conflict classes.
 
 ### 2. Signatures
 
@@ -502,6 +503,86 @@ const preview = await readMergePreview({
 ```
 
 Use the artifact reader so preview identity, workspace confinement, and SVG validation stay enforced.
+
+## Scenario: Merge Preview Apply Contract
+
+### 1. Scope / Trigger
+
+- Trigger: applying a saved GUI merge preview artifact after review.
+- Scope: `apply_merge_preview` and artifacts produced by `pull_gui_state({ conflictPolicy: "preview_only" })`.
+- Out of scope: automatic merge expansion, applying unsaved SVG payloads, cross-document apply, artifact deletion/pruning, and active-window attribute sync.
+
+### 2. Signatures
+
+- Tool: `apply_merge_preview({ docId, previewId, baseline?, confirmApplyPreview, responseMode? })`
+- `baseline`: `{ revision: number, contentHash: string }`
+- `responseMode`: `"compact" | "full"`, default `"compact"`.
+
+### 3. Contracts
+
+- `confirmApplyPreview` must be `true` before any GUI pre-pull or write work begins.
+- The artifact must resolve only under `workspace/drawings/{docId}/merge-previews/`.
+- Metadata `previewId`, `docId` when present, `svgPath`, and `metadataPath` must match the requested document and preview id.
+- Baseline selection is explicit baseline when supplied, otherwise artifact baseline.
+- If both explicit and artifact baselines exist, they must match each other and current metadata.
+- If neither baseline exists, reject rather than applying an unguarded preview.
+- Active bidirectional GUI state must be pre-pulled before comparing the selected baseline to current metadata.
+- Baseline rejection must happen before snapshot/write, including inside the write lock.
+- Successful apply snapshots current SVG first, replaces `current.svg` with the candidate SVG, updates metadata as an MCP write, writes an operation-diff artifact, appends an `apply_merge_preview` operation log entry, and triggers structural companion-extension refresh.
+- Compact responses return summary counts plus changed id arrays. Full responses include the structured diff.
+- Applying a merge preview must not delete, mutate, or mark the artifact as consumed.
+
+### 4. Validation & Error Matrix
+
+- Missing `confirmApplyPreview: true` -> `INVALID_INPUT`, no pre-pull and no write.
+- Unsafe or missing `previewId` -> `INVALID_INPUT` or `DOC_NOT_FOUND`, no write.
+- Artifact metadata identity mismatch -> `INVALID_INPUT`, no write.
+- Missing explicit and artifact baseline -> `INVALID_INPUT`, no write.
+- Explicit baseline differs from artifact baseline -> `INVALID_INPUT`, no write.
+- Selected baseline differs from current metadata after pre-pull -> `SYNC_CONFLICT`, no snapshot/write.
+- Companion extension refresh failure after a successful write -> warning only; keep `current.svg` authoritative.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a `previewable` non-overlapping GUI merge artifact is reviewed, then `apply_merge_preview` applies it with confirmation, snapshots, logs, writes diagnostics, and refreshes the GUI structurally.
+- Base: an older merge preview artifact has no baseline; callers may still apply it only by supplying an explicit current baseline.
+- Bad: applying a merge preview by feeding its SVG into `replace_document_svg`.
+- Bad: deleting the artifact immediately after apply, because later audit and replay work may need it.
+
+### 6. Tests Required
+
+- Missing confirmation rejects before GUI pre-pull and leaves workspace state unchanged.
+- Unsafe or missing preview ids reject without workspace changes.
+- Unguarded legacy preview artifacts reject unless an explicit baseline is supplied.
+- Explicit baseline and artifact baseline mismatch rejects.
+- Stale current metadata rejects before snapshot/write.
+- Successful compact apply snapshots, writes `current.svg`, updates metadata, writes operation-diff diagnostics, logs `apply_merge_preview`, triggers companion refresh, and omits full diff arrays.
+- Full mode includes the structured diff.
+- Active bidirectional GUI state is pre-pulled before baseline comparison.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await replaceDocumentSvg({
+  docId,
+  svg: mergePreview.svg,
+  confirmFullDocumentReplacement: true,
+});
+```
+
+#### Correct
+
+```typescript
+await applyMergePreview({
+  docId,
+  previewId,
+  confirmApplyPreview: true,
+});
+```
+
+Use the apply tool so artifact identity, bidirectional pre-pull, stale baseline rejection, snapshot-first write, operation diagnostics, and structural refresh all run through one guarded path.
 
 ## Scenario: Resolved Style Query Summary Contract
 

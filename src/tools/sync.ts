@@ -11,6 +11,7 @@ import type {
 } from "../adapters/workspace.js";
 import { appendOperationLog } from "../logging/operation-log.js";
 import {
+  applyMergePreviewSchema,
   connectInkscapeWindowSchema,
   disconnectInkscapeWindowSchema,
   getGuiSyncStatusSchema,
@@ -21,6 +22,7 @@ import {
   stopGuiSyncPollingSchema,
 } from "../core/validation.js";
 import { InkMcpError, toErrorPayload } from "../core/errors.js";
+import { diffSvgDocuments } from "../core/svg-diff.js";
 import {
   contentHash,
   createConnectionId,
@@ -458,6 +460,72 @@ export async function readMergePreview(input: z.infer<typeof readMergePreviewSch
   };
 }
 
+export async function applyMergePreview(input: z.infer<typeof applyMergePreviewSchema>, ctx: ToolContext) {
+  if (!input.confirmApplyPreview) {
+    throw new InkMcpError("INVALID_INPUT", "apply_merge_preview requires confirmApplyPreview: true.", {
+      requiredFlag: "confirmApplyPreview",
+    });
+  }
+
+  const artifact = await ctx.workspace.readGuiMergePreview(input.docId, input.previewId);
+  await prePullGuiStateForTool(ctx, input.docId, { toolName: "apply_merge_preview" });
+  const currentMetadata = await ctx.workspace.readMetadata(input.docId);
+  const baseline = verifyApplyMergePreviewBaseline(input.baseline, artifact.metadata.baseline, currentMetadata);
+  const write = await ctx.workspace.writeGuiMergePreviewWithSnapshot(
+    input.docId,
+    artifact.metadata.previewId,
+    baseline,
+    artifact.svg,
+    (currentSvg, nextSvg) => ({ diff: diffSvgDocuments(currentSvg, nextSvg) }),
+    {
+      beforeSnapshot: async () => {
+        const metadata = await ctx.workspace.readMetadata(input.docId);
+        verifyApplyMergePreviewBaseline(input.baseline, artifact.metadata.baseline, metadata);
+      },
+    },
+  );
+  await appendOperationLog(write.paths, {
+    level: "info",
+    docId: input.docId,
+    toolName: "apply_merge_preview",
+    inputSummary: {
+      previewId: artifact.metadata.previewId,
+      candidateKind: artifact.metadata.candidateKind,
+      status: artifact.metadata.status,
+      baselineRevision: baseline.revision,
+    },
+    snapshotPath: write.snapshotPath,
+    status: "ok",
+  });
+  const refresh = await refreshAppliedMergePreview(ctx, write.paths);
+  const diff = write.result.diff as ReturnType<typeof diffSvgDocuments>;
+  const compact = {
+    ok: true,
+    docId: input.docId,
+    previewId: artifact.metadata.previewId,
+    responseMode: "compact" as const,
+    applied: true,
+    candidateKind: artifact.metadata.candidateKind,
+    previewStatus: artifact.metadata.status,
+    baseline,
+    summary: diff.summary,
+    addedElementIds: diff.addedElementIds,
+    removedElementIds: diff.removedElementIds,
+    changedElementIds: diff.changedElementIds,
+    snapshotPath: write.snapshotPath,
+    currentSvgPath: write.paths.currentSvg,
+  };
+  const payload =
+    input.responseMode === "full"
+      ? {
+          ...compact,
+          responseMode: "full" as const,
+          diff,
+        }
+      : compact;
+  return withLocalGuiRefreshResult(withLocalWriteDiagnostics(payload, write), refresh);
+}
+
 export async function prePullGuiStateForTool(
   ctx: ToolContext,
   docId: string,
@@ -680,6 +748,8 @@ async function createGuiPullPreviewArtifact(
   status: "clean" | "previewable" | "conflict_only";
   artifact?: import("../adapters/workspace.js").GuiMergePreviewArtifact;
 }> {
+  const metadata = await ctx.workspace.readMetadata(docId);
+  const baseline = { revision: metadata.revision, contentHash: metadata.contentHash };
   if (!conflictReport.hasConflict) {
     const artifact = await ctx.workspace.writeGuiMergePreviewArtifact({
       docId,
@@ -687,6 +757,7 @@ async function createGuiPullPreviewArtifact(
       svg: pulledSvg,
       status: "clean",
       candidateKind: "pulled_gui",
+      baseline,
       summary: {
         requestId,
         idDiff,
@@ -703,6 +774,7 @@ async function createGuiPullPreviewArtifact(
       svg: merge.svg,
       status: "previewable",
       candidateKind: "merge_non_overlapping",
+      baseline,
       summary: {
         requestId,
         idDiff,
@@ -1023,6 +1095,101 @@ async function refreshConnectedWindow(ctx: ToolContext, docId: string, timeoutMs
       },
     };
   }
+}
+
+async function refreshAppliedMergePreview(ctx: ToolContext, paths: DocumentPaths) {
+  if (!ctx.autoRefresh?.enabled) {
+    return {};
+  }
+  try {
+    const refreshed = await ctx.inkscape.refreshActiveWindowWithCompanionExtension({
+      docId: paths.docId,
+      workspaceRoot: ctx.workspace.paths.root,
+      timeoutMs: ctx.autoRefresh.timeoutMs,
+    });
+    await updateActiveConnectionBaselineAfterMcpWrite(ctx, paths.docId);
+    return {
+      guiRefresh: {
+        attempted: true,
+        refreshed: true,
+        method: "companion_extension",
+        binaryPath: refreshed.binaryPath,
+        exitCode: refreshed.exitCode,
+        ...(refreshed.redraw ? { redraw: refreshed.redraw } : {}),
+      },
+    };
+  } catch (error) {
+    const cause = error instanceof InkMcpError
+      ? { code: error.code, message: error.message, details: error.details }
+      : { message: error instanceof Error ? error.message : String(error) };
+    return {
+      guiRefresh: {
+        attempted: true,
+        refreshed: false,
+        method: "companion_extension",
+      },
+      warning: {
+        code: "INKSCAPE_AUTO_REFRESH_FAILED",
+        message:
+          "The merge preview was applied, but automatic Inkscape refresh did not finish. The workspace SVG remains authoritative.",
+        details: {
+          currentSvgPath: paths.currentSvg,
+          cause,
+        },
+      },
+    };
+  }
+}
+
+function verifyApplyMergePreviewBaseline(
+  explicit: { revision: number; contentHash: string } | undefined,
+  artifact: { revision: number; contentHash: string } | undefined,
+  current: Pick<StoredMetadata, "revision" | "contentHash">,
+): { revision: number; contentHash: string } {
+  if (explicit && artifact && (explicit.revision !== artifact.revision || explicit.contentHash !== artifact.contentHash)) {
+    throw new InkMcpError("INVALID_INPUT", "Explicit baseline does not match the merge preview artifact baseline.", {
+      explicit,
+      artifact,
+    });
+  }
+  const baseline = explicit ?? artifact;
+  if (!baseline) {
+    throw new InkMcpError("INVALID_INPUT", "apply_merge_preview requires a baseline because the merge preview artifact is unguarded.", {
+      required: ["baseline.revision", "baseline.contentHash"],
+    });
+  }
+  if (current.revision !== baseline.revision || current.contentHash !== baseline.contentHash) {
+    throw new InkMcpError("SYNC_CONFLICT", "Workspace document changed since the merge preview baseline.", {
+      expectedBase: baseline,
+      actual: { revision: current.revision, contentHash: current.contentHash },
+    });
+  }
+  return baseline;
+}
+
+function withLocalWriteDiagnostics<T extends Record<string, unknown>>(
+  payload: T,
+  write: { operationDiff?: { path: string; generatedAt: string; summary: Record<string, unknown> }; operationDiffWarning?: Record<string, unknown> },
+): T & { operationDiff?: { path: string; generatedAt: string; summary: Record<string, unknown> }; warnings?: Record<string, unknown>[] } {
+  const warnings = write.operationDiffWarning ? [write.operationDiffWarning] : [];
+  return {
+    ...payload,
+    ...(write.operationDiff ? { operationDiff: write.operationDiff } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+}
+
+function withLocalGuiRefreshResult<T extends Record<string, unknown>>(
+  payload: T & { warnings?: Record<string, unknown>[] },
+  refresh: { guiRefresh?: Record<string, unknown>; warning?: Record<string, unknown> },
+): T & { guiRefresh?: Record<string, unknown>; warnings?: Record<string, unknown>[] } {
+  const existing = Array.isArray(payload.warnings) ? payload.warnings : [];
+  const warnings = refresh.warning ? [...existing, refresh.warning] : existing;
+  return {
+    ...payload,
+    ...(refresh.guiRefresh ? { guiRefresh: refresh.guiRefresh } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 
 function positiveEnvInt(name: string): number | undefined {
