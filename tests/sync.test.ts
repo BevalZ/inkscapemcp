@@ -897,6 +897,7 @@ describe("bidirectional GUI sync", () => {
         ok: true,
         alreadyRunning: false,
         polling: {
+          generation: expect.any(Number),
           persistent: true,
           skippedPullCount: 0,
           conflictCount: 0,
@@ -922,6 +923,139 @@ describe("bidirectional GUI sync", () => {
     } finally {
       releasePull?.();
       await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx).catch(() => undefined);
+    }
+  });
+
+  it("assigns monotonic polling generations across stop and restart", async () => {
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-a" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    mockGuiPull(inkscape, workspace, await workspace.readSvg("fish"));
+    const ctx = {
+      workspace,
+      inkscape,
+      autoRefresh: { enabled: false },
+      guiSyncPolling: createGuiSyncPollRegistry(),
+    };
+
+    try {
+      const first = await startGuiSyncPolling({ docId: "fish", connectionId: connected.connection.connectionId }, ctx);
+      expect(first.polling.generation).toBeGreaterThan(0);
+      await waitForPollingStatus(ctx, connected.connection.connectionId, { pullCount: 1, inFlight: false });
+      const stopped = await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx);
+      expect(stopped.stopped[0].generation).toBe(first.polling.generation);
+
+      const second = await startGuiSyncPolling({ docId: "fish", connectionId: connected.connection.connectionId }, ctx);
+      expect(second.polling.generation).toBeGreaterThan(first.polling.generation);
+      await waitForPollingStatus(ctx, connected.connection.connectionId, { pullCount: 1, inFlight: false });
+    } finally {
+      await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx).catch(() => undefined);
+    }
+  });
+
+  it("restores persisted polling entries with a runtime generation", async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation((() => {
+      return { unref: vi.fn() } as unknown as NodeJS.Timeout;
+    }) as typeof setInterval);
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined as unknown as void);
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-a" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    mockGuiPull(inkscape, workspace, await workspace.readSvg("fish"));
+    const originalCtx = {
+      workspace,
+      inkscape,
+      autoRefresh: { enabled: false },
+      guiSyncPolling: createGuiSyncPollRegistry(),
+    };
+    const restoredCtx = {
+      workspace,
+      inkscape,
+      autoRefresh: { enabled: false },
+      guiSyncPolling: createGuiSyncPollRegistry(),
+    };
+
+    try {
+      const started = await startGuiSyncPolling(
+        { docId: "fish", connectionId: connected.connection.connectionId, persist: true },
+        originalCtx,
+      );
+      expect(started.polling.generation).toBeGreaterThan(0);
+      await waitForPollingStatus(originalCtx, connected.connection.connectionId, { pullCount: 1, inFlight: false });
+
+      const restored = await getGuiSyncStatus({ connectionId: connected.connection.connectionId, includeHistory: true }, restoredCtx);
+      expect(restored.polling[0]).toMatchObject({
+        connectionId: connected.connection.connectionId,
+        generation: expect.any(Number),
+        persistent: true,
+        state: "running",
+      });
+      expect(restored.polling[0].generation).toBeGreaterThan(0);
+      expect(restored.persistedPolling?.[0]).not.toHaveProperty("generation");
+    } finally {
+      await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, restoredCtx).catch(() => undefined);
+      await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, originalCtx).catch(() => undefined);
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    }
+  });
+
+  it("ignores stale polling timer callbacks from a previous generation", async () => {
+    const intervalCallbacks: Array<() => void> = [];
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(((callback: TimerHandler, _timeout?: number, ...args: unknown[]) => {
+      intervalCallbacks.push(() => {
+        if (typeof callback === "function") {
+          callback(...args);
+        }
+      });
+      return { unref: vi.fn() } as unknown as NodeJS.Timeout;
+    }) as typeof setInterval);
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined as unknown as void);
+    const connected = await connectInkscapeWindow(
+      { docId: "fish", syncMode: "bidirectional", windowId: "window-a" },
+      { workspace, inkscape, autoRefresh: { enabled: false } },
+    );
+    mockGuiPull(inkscape, workspace, await workspace.readSvg("fish"));
+    const ctx = {
+      workspace,
+      inkscape,
+      autoRefresh: { enabled: false },
+      guiSyncPolling: createGuiSyncPollRegistry(),
+    };
+
+    try {
+      const first = await startGuiSyncPolling({ docId: "fish", connectionId: connected.connection.connectionId }, ctx);
+      await waitForPollingStatus(ctx, connected.connection.connectionId, { pullCount: 1, inFlight: false });
+      await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx);
+      const staleCallback = intervalCallbacks[0];
+      expect(staleCallback).toBeTruthy();
+
+      const second = await startGuiSyncPolling({ docId: "fish", connectionId: connected.connection.connectionId }, ctx);
+      expect(second.polling.generation).toBeGreaterThan(first.polling.generation);
+      await waitForPollingStatus(ctx, connected.connection.connectionId, { pullCount: 1, inFlight: false });
+      const before = await getGuiSyncStatus({ connectionId: connected.connection.connectionId }, ctx);
+      const beforePolling = before.polling[0];
+
+      staleCallback();
+      await Promise.resolve();
+
+      const after = await getGuiSyncStatus({ connectionId: connected.connection.connectionId }, ctx);
+      expect(after.polling[0]).toMatchObject({
+        generation: beforePolling.generation,
+        pullCount: beforePolling.pullCount,
+        skippedPullCount: beforePolling.skippedPullCount,
+        errorCount: beforePolling.errorCount,
+        conflictCount: beforePolling.conflictCount,
+        inFlight: beforePolling.inFlight,
+        updatedAt: beforePolling.updatedAt,
+      });
+      expect(inkscape.pushGuiStateWithCompanionExtension).toHaveBeenCalledTimes(2);
+    } finally {
+      await stopGuiSyncPolling({ connectionId: connected.connection.connectionId }, ctx).catch(() => undefined);
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
     }
   });
 

@@ -41,6 +41,7 @@ type WriteConflictPolicy = "reject" | "prefer_gui" | "prefer_workspace" | "merge
 
 export interface GuiSyncPollStatus {
   pollingId: string;
+  generation: number;
   docId: string;
   connectionId: string;
   state: "running" | "stopped";
@@ -77,10 +78,11 @@ interface GuiSyncPollEntry {
 export interface GuiSyncPollRegistry {
   entries: Map<string, GuiSyncPollEntry>;
   persistedLoaded: boolean;
+  nextGeneration: number;
 }
 
 export function createGuiSyncPollRegistry(): GuiSyncPollRegistry {
-  return { entries: new Map(), persistedLoaded: false };
+  return { entries: new Map(), persistedLoaded: false, nextGeneration: 1 };
 }
 
 export async function connectInkscapeWindow(input: z.infer<typeof connectInkscapeWindowSchema>, ctx: ToolContext) {
@@ -351,8 +353,10 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
   const intervalMs = input.intervalMs ?? positiveEnvInt("INKSMCP_GUI_POLL_INTERVAL_MS") ?? defaultPollingIntervalMs;
   const persistent = input.persist ?? false;
   const now = new Date().toISOString();
+  const generation = nextPollGeneration(registry);
   const status: GuiSyncPollStatus = {
     pollingId: createConnectionId("poll"),
+    generation,
     docId: connection.docId,
     connectionId: connection.connectionId,
     state: "running",
@@ -373,7 +377,7 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
   const entry: GuiSyncPollEntry = {
     status,
     timer: setInterval(() => {
-      void runPollingTick(ctx, connection.docId, connection.connectionId);
+      void runPollingTick(ctx, connection.docId, connection.connectionId, generation);
     }, intervalMs),
   };
   entry.timer.unref?.();
@@ -390,7 +394,7 @@ export async function startGuiSyncPolling(input: z.infer<typeof startGuiSyncPoll
       state: "enabled",
     });
   }
-  void runPollingTick(ctx, connection.docId, connection.connectionId);
+  void runPollingTick(ctx, connection.docId, connection.connectionId, generation);
   return {
     ok: true,
     polling: clonePollStatus(status),
@@ -775,11 +779,11 @@ async function ensurePersistedPollingLoaded(ctx: ToolContext): Promise<void> {
     if (!preference.persist || preference.state !== "enabled" || registry.entries.has(preference.connectionId)) continue;
     const connection = await ctx.workspace.readConnection(preference.connectionId).catch(() => undefined);
     if (!connection || connection.state !== "connected" || connection.syncMode !== "bidirectional" || !isConnectionActive(connection)) continue;
-    const status = createPollStatusFromPreference(preference, connection);
+    const status = createPollStatusFromPreference(preference, connection, nextPollGeneration(registry));
     const entry: GuiSyncPollEntry = {
       status,
       timer: setInterval(() => {
-        void runPollingTick(ctx, connection.docId, connection.connectionId);
+        void runPollingTick(ctx, connection.docId, connection.connectionId, status.generation);
       }, status.intervalMs),
     };
     entry.timer.unref?.();
@@ -787,10 +791,15 @@ async function ensurePersistedPollingLoaded(ctx: ToolContext): Promise<void> {
   }
 }
 
-function createPollStatusFromPreference(preference: import("../adapters/workspace.js").GuiSyncPollingPreference, connection: ConnectionConfig): GuiSyncPollStatus {
+function createPollStatusFromPreference(
+  preference: import("../adapters/workspace.js").GuiSyncPollingPreference,
+  connection: ConnectionConfig,
+  generation: number,
+): GuiSyncPollStatus {
   const now = new Date().toISOString();
   return {
     pollingId: createConnectionId("poll"),
+    generation,
     docId: preference.docId,
     connectionId: preference.connectionId,
     state: "running",
@@ -810,10 +819,19 @@ function createPollStatusFromPreference(preference: import("../adapters/workspac
   };
 }
 
-async function runPollingTick(ctx: ToolContext, docId: string, connectionId: string): Promise<void> {
+function nextPollGeneration(registry: GuiSyncPollRegistry): number {
+  if (!Number.isSafeInteger(registry.nextGeneration) || registry.nextGeneration < 1) {
+    registry.nextGeneration = 1;
+  }
+  const generation = registry.nextGeneration;
+  registry.nextGeneration += 1;
+  return generation;
+}
+
+async function runPollingTick(ctx: ToolContext, docId: string, connectionId: string, generation: number): Promise<void> {
   const registry = getPollRegistry(ctx);
   const entry = registry.entries.get(connectionId);
-  if (!entry || entry.status.state !== "running") return;
+  if (!entry || entry.status.state !== "running" || entry.status.generation !== generation) return;
   if (entry.status.inFlight) {
     recordSkippedPoll(entry.status, "in_flight");
     return;
@@ -866,7 +884,7 @@ async function runPollingTick(ctx: ToolContext, docId: string, connectionId: str
     }
   } finally {
     const latest = registry.entries.get(connectionId);
-    if (latest === entry) {
+    if (latest === entry && latest.status.generation === generation) {
       entry.status.inFlight = false;
       entry.status.updatedAt = new Date().toISOString();
     }
