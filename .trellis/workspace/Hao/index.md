@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 41
+- **Total Sessions**: 42
 - **Last Active**: 2026-06-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1505 | Active |
+| `journal-1.md` | ~1546 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 42 | 2026-06-19 | GUI Polling Generation Guard | `0a5841b` | `main` |
 | 41 | 2026-06-19 | Phase 1 extension self-check diagnostics | `504df11`, `1d827b6` | `main` |
 | 40 | 2026-06-19 | Phase 1 path validation exact diagnostics | `8c0096b` | `main` |
 | 39 | 2026-06-19 | Path H V Command Support | `f22d90f` | `main` |

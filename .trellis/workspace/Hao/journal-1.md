@@ -1511,3 +1511,36 @@ Added read-only companion extension self-check diagnostics for installed files, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: GUI Polling Generation Guard
+
+**Date**: 2026-06-19
+**Task**: GUI Polling Generation Guard
+**Branch**: `main`
+
+### Summary
+
+Added runtime generation ids to explicit GUI sync polling, guarded stale timer callbacks, covered start/restart/restored polling behavior, and documented the contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0a5841b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
