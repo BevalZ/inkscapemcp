@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index for review."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify guarded edit errors remain actionable."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate and test expectations."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Review roadmap contract update decision."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared guide index for final review."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check parser reuse and duplication risk."}
