@@ -1,0 +1,3 @@
+{"file":"docs/roadmap/phase-1-stabilize-foundations.md","reason":"Acceptance criteria and verification context for Phase 1 merge/recovery work."}
+{"file":".trellis/spec/backend/roadmap-memory.md","reason":"Regression contracts for preview artifacts and confirmed apply boundaries."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Required quality gates and backend invariants."}
