@@ -589,6 +589,137 @@ describe("query_document semantic helpers", () => {
     expect(result).toHaveProperty("tree");
   });
 
+  it("returns compact smooth quadratic path-node summaries without unsupported warnings", async () => {
+    await workspace.createDocument("smooth-quadratic-doc", "Smooth Quadratic", svgWithSmoothQuadraticPath());
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryDocument(
+      {
+        docId: "smooth-quadratic-doc",
+        responseMode: "compact",
+        includePathNodes: true,
+        pathNodeNormalize: "absolute",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "compact",
+      counts: {
+        pathCount: 1,
+        describedPathCount: 1,
+        normalizedPathCount: 1,
+        unsupportedPathCount: 0,
+      },
+      pathNodes: {
+        normalize: "absolute",
+        totalPathCount: 1,
+        describedPathCount: 1,
+        unsupportedPathCount: 0,
+        paths: [
+          {
+            elementId: "smooth-quadratic",
+            pathIndex: 0,
+            segmentCount: 4,
+            commandCounts: { M: 1, Q: 1, T: 1, t: 1 },
+            editablePointCount: 3,
+            queryPointCount: 5,
+            normalizedPointCount: 5,
+            normalizedCommandPoints: { M: ["end"], Q: ["c1", "end"], T: ["end"], t: ["end"] },
+          },
+        ],
+        warnings: [],
+      },
+    });
+    expect(result.pathNodes?.paths[0]).not.toHaveProperty("segments");
+    expect(result.pathNodes?.paths[0]).not.toHaveProperty("normalizedSegments");
+    await expect(workspace.listHistory("smooth-quadratic-doc")).resolves.toEqual([]);
+  });
+
+  it("returns standard smooth quadratic path-node segment details", async () => {
+    await workspace.createDocument("smooth-quadratic-doc", "Smooth Quadratic", svgWithSmoothQuadraticPath());
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryDocument(
+      {
+        docId: "smooth-quadratic-doc",
+        responseMode: "standard",
+        includePathNodes: true,
+        pathNodeNormalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      responseMode: "standard",
+      pathNodes: {
+        totalPathCount: 1,
+        describedPathCount: 1,
+        unsupportedPathCount: 0,
+        normalize: "relative",
+        paths: [
+          {
+            elementId: "smooth-quadratic",
+            d: "M10 10 Q12 12 16 10 T22 10 t6 0",
+            segmentCount: 4,
+            commandCounts: { M: 1, Q: 1, T: 1, t: 1 },
+            editablePointCount: 3,
+            queryPointCount: 5,
+            normalizedPointCount: 5,
+            segments: [
+              {
+                index: 0,
+                cmd: "M",
+                queryPoints: ["end"],
+                availablePoints: ["end"],
+                absolutePoints: { end: { x: 10, y: 10 } },
+              },
+              {
+                index: 1,
+                cmd: "Q",
+                queryPoints: ["c1", "end"],
+                availablePoints: ["c1", "end"],
+                absolutePoints: { c1: { x: 12, y: 12 }, end: { x: 16, y: 10 } },
+              },
+              {
+                index: 2,
+                cmd: "T",
+                queryPoints: ["end"],
+                availablePoints: [],
+                raw: { cmd: "T", x: 22, y: 10 },
+                absolutePoints: { end: { x: 22, y: 10 } },
+              },
+              {
+                index: 3,
+                cmd: "t",
+                queryPoints: ["end"],
+                availablePoints: [],
+                raw: { cmd: "t", x: 6, y: 0 },
+                absolutePoints: { end: { x: 28, y: 10 } },
+              },
+            ],
+            normalizedSegments: [
+              { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+              { index: 1, cmd: "Q", points: { c1: { x: 2, y: 2 }, end: { x: 6, y: 0 } } },
+              { index: 2, cmd: "T", points: { end: { x: 6, y: 0 } } },
+              { index: 3, cmd: "t", points: { end: { x: 6, y: 0 } } },
+            ],
+          },
+        ],
+        warnings: [],
+      },
+    });
+    await expect(workspace.listHistory("smooth-quadratic-doc")).resolves.toEqual([]);
+  });
+
   it("returns compact resolved-style summaries with inheritance and local overrides", async () => {
     await workspace.createDocument("style-doc", "Style", svgWithStyles());
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
@@ -704,6 +835,13 @@ function svgWithMixedPaths(): string {
     <path id="arc" d="M20 20 A5 5 0 0 1 30 30" fill="none" stroke="#111827"/>
     <path id="smooth" d="M10 10 C12 12 14 12 16 10 S20 8 22 10 s4 2 6 0" fill="none" stroke="#111827"/>
   </g>
+</svg>`;
+}
+
+function svgWithSmoothQuadraticPath(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="60px" viewBox="0 0 100 60">
+  <path id="smooth-quadratic" d="M10 10 Q12 12 16 10 T22 10 t6 0" fill="none" stroke="#111827"/>
 </svg>`;
 }
 

@@ -127,6 +127,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 41 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `A/a` arc path command recognition. Arc segments expose raw arc parameters plus `queryPoints: ["end"]`, absolute endpoint coordinates, and absolute/relative normalized endpoint views. Loop 42 supersedes the original read-only edit boundary by making arc endpoints editable through `availablePoints: ["end"]`; arc flag validation still rejects non-0/1 large-arc and sweep flags with actionable diagnostics.
 - Phase 1 loop 42 extended `edit_path_nodes`, `transform_path_points`, selector schemas, and path validation summaries with bounded `A/a` arc endpoint editing. Arc endpoints are now editable `end` points; `rx`, `ry`, `xAxisRotation`, `largeArcFlag`, and `sweepFlag` are preserved; uppercase `A` stores absolute endpoint coordinates; lowercase `a` stores segment-base-relative endpoint coordinates; and arc `c1`/`c2` selections still reject before snapshot/write. Existing write invariants remain coupled: pre-pull active bidirectional GUI state, validate before snapshot, snapshot before write, operation diff/log on success, and direct active-window `d` attribute sync after successful path data writes.
 - Phase 1 loop 43 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `S/s` smooth cubic command recognition. Smooth cubic segments expose raw `x2`, `y2`, `x`, and `y`, `queryPoints: ["c2", "end"]`, absolute/relative normalized `c2` and endpoint coordinates, and `availablePoints: []` so edit selectors continue rejecting smooth cubic paths before snapshot/write until reflection-aware mutation semantics are specified.
+- Phase 1 loop 44 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `T/t` smooth quadratic command recognition. Smooth quadratic segments expose raw `x` and `y`, `queryPoints: ["end"]`, absolute/relative normalized endpoint coordinates, and `availablePoints: []` so edit selectors continue rejecting smooth quadratic paths before snapshot/write until reflection-aware mutation semantics are specified.
 
 ### 4. Validation & Error Matrix
 
@@ -1643,7 +1644,7 @@ Use `queryPoints` for inspection and `availablePoints` for bounded endpoint edit
 
 - Trigger: inspecting SVG path data that includes smooth cubic `S/s` commands before reflection-aware edit semantics exist.
 - Scope: `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` for `S/s` segments.
-- Out of scope: editing `S/s` endpoints or control handles, exposing reflected implicit `c1` as an editable point, converting `S/s` to `C/c`, structured `S/s` segment arrays, shorthand quadratic `T/t`, and GUI node-selection integration.
+- Out of scope: editing `S/s` endpoints or control handles, exposing reflected implicit `c1` as an editable point, converting `S/s` to `C/c`, structured `S/s` segment arrays, and GUI node-selection integration.
 
 ### 2. Signatures
 
@@ -1676,7 +1677,7 @@ Use `queryPoints` for inspection and `availablePoints` for bounded endpoint edit
 ### 4. Validation & Error Matrix
 
 - Missing `S/s` parameters -> `INVALID_INPUT` with command, segment index, expected/actual/missing parameter counts, token index, and source offset when available.
-- `query_path_nodes` on a path with unsupported commands such as `T/t` -> `INVALID_INPUT` or document-wide unsupported-path warning.
+- `query_path_nodes` on a path with unsupported commands outside the current query parser set -> `INVALID_INPUT` or document-wide unsupported-path warning.
 - `edit_path_nodes` or `transform_path_points` on an `S/s`-containing path -> `INVALID_INPUT`, no snapshot/write/log/refresh.
 - `transform_path_points` command selector with `S/s` -> schema/core rejection until `S/s` becomes editable.
 
@@ -1714,6 +1715,82 @@ segment.availablePoints = [];
 ```
 
 Use `queryPoints` for read-only inspection and keep `availablePoints` empty until a future task defines how reflected implicit `c1`, endpoint edits, and `c2` edits round-trip without surprising geometry changes.
+
+## Scenario: Smooth Quadratic Path Read-Only Query Contract
+
+### 1. Scope / Trigger
+
+- Trigger: inspecting SVG path data that includes smooth quadratic `T/t` commands before reflection-aware edit semantics exist.
+- Scope: `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` for `T/t` segments.
+- Out of scope: editing `T/t` endpoints or reflected implicit control points, converting `T/t` to `Q/q`, structured `T/t` segment arrays, and GUI node-selection integration.
+
+### 2. Signatures
+
+- Tool: `query_path_nodes({ docId, elementId, normalize?: "none" | "absolute" | "relative", skipPrePull?, allowStaleRead? })`
+- Tool: `query_document({ docId, includePathNodes: true, pathNodeNormalize?: "none" | "absolute" | "relative", responseMode? })`
+- Tool: `validate_path_data({ d, requireMoveTo? })`
+- Smooth quadratic raw segment shape:
+
+```json
+{
+  "cmd": "T",
+  "x": 22,
+  "y": 10
+}
+```
+
+### 3. Contracts
+
+- `T/t` segments are query-recognized path commands, not editable path commands.
+- Smooth quadratic segments expose `queryPoints: ["end"]`, `points.end`, and `absolutePoints.end`.
+- Smooth quadratic segments expose `availablePoints: []` so selector/edit tooling cannot mutate them before a dedicated edit contract exists.
+- `normalize: "absolute"` reports endpoint coordinates in absolute SVG user units.
+- `normalize: "relative"` reports endpoint coordinates relative to the segment base point, including for uppercase `T`.
+- Compact document path-node summaries count smooth quadratic points through `queryPointCount` and `normalizedPointCount`, while `editablePointCount` excludes them.
+- Read-only query tools must not snapshot, update metadata, append operation logs, write operation-diff artifacts, or refresh Inkscape.
+- `edit_path_nodes` and `transform_path_points` continue to use the editable parser and reject smooth-quadratic-containing paths before snapshot/write.
+
+### 4. Validation & Error Matrix
+
+- Missing `T/t` parameters -> `INVALID_INPUT` with command, segment index, expected/actual/missing parameter counts, token index, and source offset when available.
+- `query_path_nodes` on a path with unsupported commands outside the current query parser set -> `INVALID_INPUT` or document-wide unsupported-path warning.
+- `edit_path_nodes` or `transform_path_points` on a `T/t`-containing path -> `INVALID_INPUT`, no snapshot/write/log/refresh.
+- `transform_path_points` command selector with `T/t` -> schema/core rejection until `T/t` becomes editable.
+
+### 5. Good/Base/Bad Cases
+
+- Good: inspect `M10 10 Q12 12 16 10 T22 10` and use the reported endpoint coordinates to plan a future safe smooth quadratic edit.
+- Good: use `query_document({ includePathNodes: true, pathNodeNormalize: "relative" })` to summarize mixed quadratic/smooth-quadratic paths without failing the whole query.
+- Base: use `validate_path_data` as a no-workspace preflight for `T/t` syntax and point-count diagnostics.
+- Bad: exposing smooth quadratic endpoints in `availablePoints` before edit-side reflected-control semantics exist.
+- Bad: silently converting `T/t` to `Q/q` as a side effect of query.
+
+### 6. Tests Required
+
+- Core tests for uppercase and lowercase smooth quadratic query segments with raw parameters and absolute endpoints.
+- Core tests for absolute and relative normalized smooth quadratic endpoint views.
+- Tool-level tests that smooth quadratic queries do not write history or call Inkscape refresh/sync.
+- Document-query tests that compact and standard/full responses include smooth quadratic summaries without unsupported warnings.
+- Validation tests for valid and malformed smooth quadratic parameter sets.
+- Mutation guard tests proving smooth-quadratic-containing paths reject in `edit_path_nodes` and `transform_path_points`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not silently convert smooth quadratic commands during query.
+return { cmd: "Q", x1: reflectedX1, y1: reflectedY1, x, y };
+```
+
+#### Correct
+
+```typescript
+segment.queryPoints = ["end"];
+segment.availablePoints = [];
+```
+
+Use `queryPoints` for read-only inspection and keep `availablePoints` empty until a future task defines how reflected implicit controls and endpoint edits round-trip without surprising geometry changes.
 
 ## Phase Summary
 

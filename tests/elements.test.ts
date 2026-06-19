@@ -2036,6 +2036,62 @@ describe("element tools", () => {
     await expect(workspace.listHistory("smooth-doc")).resolves.toEqual([]);
   });
 
+  it("queries smooth quadratic path nodes without treating them as editable", async () => {
+    await workspace.createDocument(
+      "smooth-quadratic-doc",
+      "Smooth quadratic doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="smooth-quadratic" d="M10 10 Q12 12 16 10 T22 10 t6 0" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryPathNodes(
+      {
+        docId: "smooth-quadratic-doc",
+        elementId: "smooth-quadratic",
+        normalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "smooth-quadratic-doc",
+      elementId: "smooth-quadratic",
+      segmentCount: 4,
+      segments: expect.arrayContaining([
+        expect.objectContaining({
+          index: 2,
+          cmd: "T",
+          queryPoints: ["end"],
+          availablePoints: [],
+          raw: { cmd: "T", x: 22, y: 10 },
+          absolutePoints: { end: { x: 22, y: 10 } },
+        }),
+        expect.objectContaining({
+          index: 3,
+          cmd: "t",
+          queryPoints: ["end"],
+          availablePoints: [],
+          raw: { cmd: "t", x: 6, y: 0 },
+          absolutePoints: { end: { x: 28, y: 10 } },
+        }),
+      ]),
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        { index: 1, cmd: "Q", points: { c1: { x: 2, y: 2 }, end: { x: 6, y: 0 } } },
+        { index: 2, cmd: "T", points: { end: { x: 6, y: 0 } } },
+        { index: 3, cmd: "t", points: { end: { x: 6, y: 0 } } },
+      ],
+    });
+    await expect(workspace.listHistory("smooth-quadratic-doc")).resolves.toEqual([]);
+  });
+
   it("rejects smooth cubic node edits without writing history", async () => {
     await workspace.createDocument(
       "smooth-invalid-doc",
@@ -2063,6 +2119,47 @@ describe("element tools", () => {
     expect(companion).not.toHaveBeenCalled();
     await expect(workspace.listHistory("smooth-invalid-doc")).resolves.toEqual([]);
     await expect(workspace.readSvg("smooth-invalid-doc")).resolves.toContain('d="M10 10 C12 12 14 12 16 10 S20 8 22 10"');
+  });
+
+  it("rejects smooth quadratic node edits without writing history", async () => {
+    await workspace.createDocument(
+      "smooth-quadratic-invalid-doc",
+      "Smooth quadratic invalid doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="smooth-quadratic" d="M10 10 Q12 12 16 10 T22 10" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      editPathNodes(
+        {
+          docId: "smooth-quadratic-invalid-doc",
+          elementId: "smooth-quadratic",
+          edits: [{ type: "move_point", segmentIndex: 2, point: "end", dx: 1, dy: 0 }],
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("supports only M, L, H, V, C, Q, A, and Z");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "smooth-quadratic-invalid-doc",
+          elementId: "smooth-quadratic",
+          pointSelector: { points: [{ segmentIndex: 2, point: "end" }] },
+          transform: { type: "translate", dx: 1, dy: 0 },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("supports only M, L, H, V, C, Q, A, and Z");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("smooth-quadratic-invalid-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("smooth-quadratic-invalid-doc")).resolves.toContain('d="M10 10 Q12 12 16 10 T22 10"');
   });
 
   it("validates path data without workspace or Inkscape side effects", async () => {
@@ -2113,6 +2210,20 @@ describe("element tools", () => {
       ],
     });
 
+    await expect(validatePathDataTool({ d: "M1 1 Q2 2 3 3 T4 4 t1 0", requireMoveTo: true })).resolves.toMatchObject({
+      ok: true,
+      segmentCount: 4,
+      commandCounts: { M: 1, Q: 1, T: 1, t: 1 },
+      availablePointCount: 3,
+      queryPointCount: 5,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "Q", queryPoints: ["c1", "end"], availablePoints: ["c1", "end"] },
+        { segmentIndex: 2, cmd: "T", queryPoints: ["end"], availablePoints: [] },
+        { segmentIndex: 3, cmd: "t", queryPoints: ["end"], availablePoints: [] },
+      ],
+    });
+
     await expect(validatePathDataTool({ d: "M1 1 A2 2 0 0 3 3 3", requireMoveTo: true })).resolves.toMatchObject({
       ok: false,
       error: {
@@ -2138,6 +2249,22 @@ describe("element tools", () => {
           expectedParamCount: 6,
           actualParamCount: 3,
           missingParamCount: 3,
+        },
+      },
+    });
+
+    await expect(validatePathDataTool({ d: "M1 1 Q2 2 3 3 T4", requireMoveTo: true })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path command has an incomplete parameter set.",
+        details: {
+          command: "T",
+          segmentIndex: 2,
+          commandIndex: 2,
+          expectedParamCount: 2,
+          actualParamCount: 1,
+          missingParamCount: 1,
         },
       },
     });

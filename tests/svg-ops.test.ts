@@ -204,6 +204,36 @@ describe("SVG operations", () => {
       ],
     });
 
+    expect(summarizePathDataValidation("M10 10 Q12 12 16 10 T22 10 t6 0")).toMatchObject({
+      ok: true,
+      segmentCount: 4,
+      commandCounts: { M: 1, Q: 1, T: 1, t: 1 },
+      availablePointCount: 3,
+      queryPointCount: 5,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "Q", queryPoints: ["c1", "end"], availablePoints: ["c1", "end"] },
+        { segmentIndex: 2, cmd: "T", queryPoints: ["end"], availablePoints: [] },
+        { segmentIndex: 3, cmd: "t", queryPoints: ["end"], availablePoints: [] },
+      ],
+    });
+
+    expect(summarizePathDataValidation("M10 10 Q12 12 16 10 T22")).toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Path command has an incomplete parameter set.",
+        details: {
+          command: "T",
+          segmentIndex: 2,
+          commandIndex: 2,
+          expectedParamCount: 2,
+          actualParamCount: 1,
+          missingParamCount: 1,
+        },
+      },
+    });
+
     expect(summarizePathDataValidation("M10 10 A5 5 0 2 1 20 20")).toMatchObject({
       ok: false,
       error: {
@@ -2437,6 +2467,70 @@ describe("SVG operations", () => {
     ]);
   });
 
+  it("queries smooth quadratic path segments without marking them editable", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "smooth-quadratic-path",
+      d: "M10 10 Q12 12 16 10 T22 10 t6 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const absolute = queryPathNodesInSvg(svg, { elementId: "smooth-quadratic-path", normalize: "absolute" });
+    expect(absolute).toMatchObject({
+      elementId: "smooth-quadratic-path",
+      segmentCount: 4,
+      segments: [
+        expect.objectContaining({
+          index: 0,
+          cmd: "M",
+          queryPoints: ["end"],
+          availablePoints: ["end"],
+          absolutePoints: { end: { x: 10, y: 10 } },
+        }),
+        expect.objectContaining({
+          index: 1,
+          cmd: "Q",
+          queryPoints: ["c1", "end"],
+          availablePoints: ["c1", "end"],
+          absolutePoints: {
+            c1: { x: 12, y: 12 },
+            end: { x: 16, y: 10 },
+          },
+        }),
+        expect.objectContaining({
+          index: 2,
+          cmd: "T",
+          queryPoints: ["end"],
+          availablePoints: [],
+          raw: { cmd: "T", x: 22, y: 10 },
+          points: { end: { x: 22, y: 10 } },
+          absolutePoints: { end: { x: 22, y: 10 } },
+        }),
+        expect.objectContaining({
+          index: 3,
+          cmd: "t",
+          queryPoints: ["end"],
+          availablePoints: [],
+          raw: { cmd: "t", x: 6, y: 0 },
+          absolutePoints: { end: { x: 28, y: 10 } },
+        }),
+      ],
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        { index: 1, cmd: "Q", points: { c1: { x: 12, y: 12 }, end: { x: 16, y: 10 } } },
+        { index: 2, cmd: "T", points: { end: { x: 22, y: 10 } } },
+        { index: 3, cmd: "t", points: { end: { x: 28, y: 10 } } },
+      ],
+    });
+
+    const relative = queryPathNodesInSvg(svg, { elementId: "smooth-quadratic-path", normalize: "relative" });
+    expect(relative.normalizedSegments).toMatchObject([
+      { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+      { index: 1, cmd: "Q", points: { c1: { x: 2, y: 2 }, end: { x: 6, y: 0 } } },
+      { index: 2, cmd: "T", points: { end: { x: 6, y: 0 } } },
+      { index: 3, cmd: "t", points: { end: { x: 6, y: 0 } } },
+    ]);
+  });
+
   it("rejects smooth cubic path edits before mutation", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "smooth-path",
@@ -2455,6 +2549,29 @@ describe("SVG operations", () => {
       transformPathPointsInSvg(svg, {
         elementId: "smooth-path",
         pointSelector: { points: [{ segmentIndex: 2, point: "c2" }] },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("supports only M, L, H, V, C, Q, A, and Z");
+  });
+
+  it("rejects smooth quadratic path edits before mutation", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "smooth-quadratic-path",
+      d: "M10 10 Q12 12 16 10 T22 10",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      editPathNodesInSvg(svg, {
+        elementId: "smooth-quadratic-path",
+        edits: [{ type: "move_point", segmentIndex: 2, point: "end", dx: 1, dy: 0 }],
+      }),
+    ).toThrow("supports only M, L, H, V, C, Q, A, and Z");
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "smooth-quadratic-path",
+        pointSelector: { points: [{ segmentIndex: 2, point: "end" }] },
         transform: { type: "translate", dx: 1, dy: 0 },
       }),
     ).toThrow("supports only M, L, H, V, C, Q, A, and Z");
