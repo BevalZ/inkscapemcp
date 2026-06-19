@@ -1,0 +1,11 @@
+{"file": "docs/inkscape-mcp-plan.md", "reason": "Primary MCP server product plan and safety contracts."}
+{"file": "docs/roadmap/phase-1-stabilize-foundations.md", "reason": "Phase 1 path editing reliability roadmap and boundaries."}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index and pre-development checklist."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Module organization for core path parsing and tool wiring."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error semantics for invalid path data and guarded edit operations."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend test and code quality expectations for parser/query/edit changes."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Write operations must log summaries only after successful mutation."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Filesystem persistence, snapshot-before-write, and no-database boundaries."}
+{"file": ".trellis/spec/backend/roadmap-memory.md", "reason": "Durable path editing and arc query contracts to extend safely."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide index."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Parser changes should reuse existing path-data helpers rather than parallel implementations."}
