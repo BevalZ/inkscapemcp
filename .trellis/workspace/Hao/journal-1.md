@@ -378,7 +378,10 @@ Implemented read-only snapshot diff inspection with compact/full responses, hist
 
 ### Main Changes
 
-(Add details)
+- Added bounded `A/a` endpoint editing to the raw editable path parser and serializer.
+- Extended command selectors and validation schemas so `transform_path_points` can select arc endpoints through the existing selector pipeline.
+- Preserved arc radii, rotation, and flags while keeping uppercase `A` absolute and lowercase `a` segment-relative.
+- Updated roadmap memory with the loop 42 arc endpoint editing contract.
 
 ### Git Commits
 
@@ -388,7 +391,12 @@ Implemented read-only snapshot diff inspection with compact/full responses, hist
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `npx vitest run tests/svg-ops.test.ts tests/elements.test.ts tests/query-document.test.ts tests/path-validation.test.ts`
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension\inksmcp_pull.py --self-test`
+- [OK] `git diff --check` (CRLF warnings only)
 
 ### Status
 
@@ -1598,6 +1606,39 @@ Added read-only A/a arc path query support while keeping arc editing guarded. Qu
 | Hash | Message |
 |------|---------|
 | `a787c8d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 45: Arc Endpoint Editing
+
+**Date**: 2026-06-19
+**Task**: Arc Endpoint Editing
+**Branch**: `main`
+
+### Summary
+
+Promoted A/a arc endpoints into the bounded path point editing contract. edit_path_nodes and transform_path_points now edit arc end points while preserving arc parameters and storage form; arc c1/c2 selections still fail before writes. Updated roadmap memory and tests for core, tool, schema, and query behavior.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `69ec0f2` | (see git log) |
 
 ### Testing
 
