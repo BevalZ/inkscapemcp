@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 43
+- **Total Sessions**: 44
 - **Last Active**: 2026-06-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1579 | Active |
+| `journal-1.md` | ~1612 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 44 | 2026-06-19 | Arc Path Query Support | `a787c8d` | `main` |
 | 43 | 2026-06-19 | Apply GUI Merge Preview | `7c8762a` | `main` |
 | 42 | 2026-06-19 | GUI Polling Generation Guard | `0a5841b` | `main` |
 | 41 | 2026-06-19 | Phase 1 extension self-check diagnostics | `504df11`, `1d827b6` | `main` |

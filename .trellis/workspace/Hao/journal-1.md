@@ -1577,3 +1577,36 @@ Added apply_merge_preview for confirmed saved GUI merge preview application with
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: Arc Path Query Support
+
+**Date**: 2026-06-19
+**Task**: Arc Path Query Support
+**Branch**: `main`
+
+### Summary
+
+Added read-only A/a arc path query support while keeping arc editing guarded. Query outputs now expose arc raw parameters, query endpoint points, and absolute/relative normalized endpoints; validate_path_data accepts valid arcs and rejects invalid arc flags. Verified with targeted tests, npm test, typecheck, build, extension self-test, and diff check.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a787c8d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
