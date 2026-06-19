@@ -3,7 +3,7 @@
   "name": "phase1-arc-endpoint-editing",
   "title": "Phase 1 arc endpoint editing",
   "description": "Allow bounded editing/transforms of A/a arc endpoints while preserving arc parameters and existing safety guards.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
