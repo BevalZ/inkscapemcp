@@ -1651,3 +1651,44 @@ Promoted A/a arc endpoints into the bounded path point editing contract. edit_pa
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: Smooth Cubic Path Query Support
+
+**Date**: 2026-06-19
+**Task**: Smooth Cubic Path Query Support
+**Branch**: `main`
+
+### Summary
+
+Added read-only S/s smooth cubic path query support. query_path_nodes, query_document path summaries, and validate_path_data now expose smooth cubic c2/end query points and normalized views while keeping availablePoints empty so edit_path_nodes and transform_path_points reject S/s paths before writes.
+
+### Main Changes
+
+- Added `SmoothCubicPathSegment` parsing/query support for S/s path commands.
+- Exposed smooth cubic `c2` and `end` query points through path-node summaries, query_document output, validation summaries, and normalized absolute/relative views.
+- Kept S/s read-only by leaving `availablePoints` empty and preserving edit/transform rejection before snapshot or write.
+- Added coverage for query_path_nodes, element summaries, document queries, and validation behavior.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cd2acfb` | (see git log) |
+
+### Testing
+
+- [OK] `npx vitest run tests/svg-ops.test.ts tests/elements.test.ts tests/query-document.test.ts tests/path-validation.test.ts`
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
+- [OK] `python inkscape-extension\inksmcp_pull.py --self-test`
+- [OK] `git diff --check` passed with CRLF warnings only
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
