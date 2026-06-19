@@ -65,6 +65,180 @@ Candidate tasks: `includePathNodes` on `query_document`, reverse references, unr
 
 Candidate tasks: checkpoint tool, last-write recovery helper, operation replay with stale baseline rejection.
 
+## Five-Pass Refinement Checklist
+
+Run these five passes before selecting the next Phase 1 implementation slice. Each pass should leave behind either a Trellis task, a test fixture, or a documented reason to defer.
+
+### Pass 1: Contract And Invariant Audit
+
+Audit questions:
+
+- Which tools are read-only, and do tests prove they never snapshot, log, write metadata, create operation artifacts, or refresh Inkscape?
+- Which tools write `current.svg`, and do tests prove validation and active bidirectional pre-pull happen before snapshot/write?
+- Which write tools use direct active-window attribute sync, and which must use structural companion refresh?
+- Which contracts rely on document identity, connection identity, revision, or content hash?
+- Which response fields are stable enough for agents to branch on?
+
+Next-step checklist:
+
+- Add or refresh contract tests for every read/query/diagnostic tool.
+- Add write-order tests for pre-pull, validation, snapshot, save, diff, log, and refresh.
+- Add a status field inventory for sync, polling, refresh, and operation preview artifacts.
+- Add negative tests for ambiguous bidirectional connections and missing identity fields.
+- Add compact response snapshots for high-token query/status paths.
+
+Candidate Trellis slices:
+
+- `diagnose_read_only_side_effects`: prove each diagnostic/query path has no workspace or GUI side effects.
+- `write_order_regression_matrix`: table-driven tests for every write tool's pre-pull/snapshot/diff/log/refresh order.
+- `sync_identity_status_inventory`: make identity strength, capability, and ambiguity fields consistent across status tools.
+
+Verification evidence:
+
+- Unit/tool tests assert no history, metadata, operation log, operation-diff, or refresh calls for read-only paths.
+- Write tests inspect call order or artifacts, not just final SVG content.
+- `query_document` compact fixtures remain token-conscious and machine-readable.
+
+Stop condition:
+
+- Stop only when a future agent can classify any Phase 1 tool as read-only, attribute-write, structural-write, recovery-write, or GUI-sync from docs and tests alone.
+
+### Pass 2: Failure And Edge-Case Audit
+
+Audit questions:
+
+- What happens when the GUI extension is missing, stale, or not loaded in the active window?
+- What happens when a GUI pull manifest is missing, malformed, or identity-mismatched?
+- What happens when workspace revision/hash changed after a preview, replay, or id-repair proposal?
+- What happens when operation-diff generation fails after a valid save?
+- What happens when a rollback/recovery request races with active bidirectional sync?
+
+Next-step checklist:
+
+- Add deterministic fixtures for identity mismatch, stale baselines, and merge conflict classes.
+- Add warning-only tests for non-critical post-save failures such as refresh or diff generation.
+- Add rejection tests for stale previews, stale replay baselines, and stale id-repair applications.
+- Add recovery tests that prove rollback guards respect active bidirectional sync.
+- Add polling tests for overlap prevention, backoff, persisted reload, and stop behavior.
+
+Candidate Trellis slices:
+
+- `gui_sync_failure_fixture_pack`: reusable fixtures for missing manifest, marker mismatch, stale hash, and extension unavailable.
+- `post_save_warning_boundaries`: prove refresh/diff failures warn without rolling back valid SVG writes.
+- `stale_artifact_apply_rejections`: reject stale operation previews, replay baselines, and id-repair proposals before snapshot/write.
+
+Verification evidence:
+
+- Error details include machine-readable codes and enough fields for agent recovery.
+- Warnings are returned only after the primary mutation succeeded.
+- Failed preconditions leave `current.svg`, history, metadata, logs, operation-diffs, and GUI state unchanged.
+
+Stop condition:
+
+- Stop when every expected Phase 1 failure mode has a fixture and the failure either rejects before side effects or returns a documented warning after success.
+
+### Pass 3: Observability And Evidence Audit
+
+Audit questions:
+
+- Can a user or agent explain what changed after any write without reading the whole SVG?
+- Can a user or agent tell whether the open Inkscape window is current, stale, wrong, or unsupported?
+- Are operation previews, merge previews, checkpoints, and history snapshots discoverable by compact tools?
+- Do status tools report enough timestamps, hashes, ids, and warnings without exposing large payloads?
+- Are there clear remediation strings for extension, Inkscape, and sync failures?
+
+Next-step checklist:
+
+- Add compact list/read tools or response modes for any artifact family that lacks them.
+- Add artifact metadata fields for source hash, baseline, createdAt, toolName, and changed ids.
+- Add diagnostic readiness and remediation fields for refresh, pull, push, and polling.
+- Add operation-diff summaries to successful write responses where practical.
+- Add docs that map warning codes to next actions.
+
+Candidate Trellis slices:
+
+- `artifact_catalog_consistency`: normalize list/read metadata for operation previews, merge previews, checkpoints, and diffs.
+- `gui_refresh_observability`: expose whether refresh used direct attribute sync, companion pull, skipped, or warned.
+- `warning_remediation_catalog`: document and test structured remediation for common Phase 1 warning codes.
+
+Verification evidence:
+
+- Compact artifact/status tools return ids and summaries without raw SVG by default.
+- Full modes remain available for diagnosis.
+- Warning/error details are stable enough for tests and agent branching.
+
+Stop condition:
+
+- Stop when every Phase 1 artifact or sync state can be listed, inspected compactly, and tied back to a baseline hash or snapshot id.
+
+### Pass 4: Automation And Regression-Test Audit
+
+Audit questions:
+
+- Which contracts are currently protected only by manual testing?
+- Which Inkscape-dependent tests have deterministic skip paths?
+- Which path command families are query-only versus editable, and is that matrix tested?
+- Which response-mode variants lack coverage?
+- Which fixtures can be reused across sync, diff, replay, and recovery tests?
+
+Next-step checklist:
+
+- Add a matrix test for tool side effects by category.
+- Add response-mode tests for compact, standard, and full where tools support them.
+- Add path command support matrix tests for query, validate, edit, and transform behavior.
+- Add Inkscape adapter tests for unavailable, timeout, non-zero, and success-with-warning cases.
+- Add fixture helpers for SVG documents with ids, defs, paths, text, and conflicting GUI/workspace edits.
+
+Candidate Trellis slices:
+
+- `phase1_side_effect_matrix_tests`: one matrix covering read-only, dry-run, preview, write, rollback, and refresh tools.
+- `path_support_matrix`: keep editable/query-only/unsupported path command behavior explicit.
+- `inkscape_adapter_failure_matrix`: adapter-level tests for missing binary, timeout, failed action, and warning propagation.
+
+Verification evidence:
+
+- `npm run typecheck`, `npm test`, `npm run build`, and extension self-test pass.
+- Tests fail when a read-only path writes, a write path skips snapshot, or an unsupported path command becomes editable accidentally.
+- Inkscape-dependent tests skip only when the dependency is actually unavailable.
+
+Stop condition:
+
+- Stop when regression tests would catch the last three classes of user-reported Phase 1 breakage: manual refresh required, wrong document/window, and unintended full-document replacement.
+
+### Pass 5: Rollout, Recovery, And Follow-Up Audit
+
+Audit questions:
+
+- Can users recover from a failed edit, stale GUI state, or bad preview application?
+- Are potentially destructive operations gated by explicit confirmation fields?
+- Are new tools documented with good/base/bad examples?
+- Are follow-up tasks small enough to finish in one Trellis loop?
+- Does roadmap memory capture any new durable contract?
+
+Next-step checklist:
+
+- Add explicit confirmation fields to destructive or review-apply tools.
+- Add recovery guidance to warnings for stale baselines, active bidirectional rollback guards, and refresh failures.
+- Add or update roadmap memory when a new tool contract ships.
+- Split remaining work into one-slice Trellis PRDs.
+- Archive completed tasks and record session journals after verification.
+
+Candidate Trellis slices:
+
+- `phase1_recovery_guidance`: standardize recovery instructions across rollback, recover, apply preview, replay, and id repair.
+- `destructive_confirmation_audit`: ensure destructive paths require explicit confirmation and tests cover missing confirmation.
+- `phase1_task_backlog_refresh`: convert remaining unchecked candidates into bounded Trellis tasks.
+
+Verification evidence:
+
+- Destructive calls without confirmation reject before side effects.
+- Recovery docs reference actual tools and artifact ids, not vague manual steps.
+- Roadmap memory contains only durable contracts, not transient task notes.
+
+Stop condition:
+
+- Stop when each Phase 1 follow-up has a clear owner document, one acceptance test target, and a rollback/recovery story.
+
 ## Five-Loop Execution Template
 
 1. Create a Trellis task that references this document and `phase-1-stabilize-foundations.md`.
