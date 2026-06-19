@@ -1544,3 +1544,36 @@ Added runtime generation ids to explicit GUI sync polling, guarded stale timer c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: Apply GUI Merge Preview
+
+**Date**: 2026-06-19
+**Task**: Apply GUI Merge Preview
+**Branch**: `main`
+
+### Summary
+
+Added apply_merge_preview for confirmed saved GUI merge preview application with baseline guards, pre-pull, snapshot-first write, operation diff, logging, structural refresh, tests, and docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7c8762a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
