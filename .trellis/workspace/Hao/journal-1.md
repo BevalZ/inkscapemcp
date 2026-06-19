@@ -419,7 +419,11 @@ Completed Phase 1 Loop 4 by adding read-only query_document includePathNodes sum
 
 ### Main Changes
 
-(Add details)
+- Added phase-specific five-pass refinement checklists to all three debug-hardening roadmap documents.
+- Each pass now includes audit questions, next-step checklist items, candidate Trellis slices, verification evidence, and stop conditions.
+- Phase 1 focuses on sync, refresh, query, path, diff, replay, and recovery reliability.
+- Phase 2 focuses on structured SVG/Inkscape operations, dependency-aware mutation, text/assets, visual regression, and allowlisted actions.
+- Phase 3 focuses on artifact-first vectorization, metrics, editability, semantic reconstruction, OCR, visible diagnostics, and agent plan verification.
 
 ### Git Commits
 
@@ -544,7 +548,11 @@ Implemented preview_svg_operations as a read-only dry-run surface for controlled
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `git diff --check`
+- [OK] Five-pass structure count check for all three debug-hardening roadmap documents
+- [OK] `npm run typecheck`
+- [OK] `npm test`
+- [OK] `npm run build`
 
 ### Status
 
