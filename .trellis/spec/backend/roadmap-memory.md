@@ -126,6 +126,7 @@ Phase 3 candidate tool families:
 - Phase 1 loop 40 established `apply_merge_preview` as the explicit mutation boundary for saved GUI merge preview artifacts. It requires `confirmApplyPreview: true`, applies only artifacts under `workspace/drawings/{docId}/merge-previews/`, records/uses artifact baselines when available, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg`, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh. `list_merge_previews` and `read_merge_preview` remain read-only inspection tools.
 - Phase 1 loop 41 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `A/a` arc path command recognition. Arc segments expose raw arc parameters plus `queryPoints: ["end"]`, absolute endpoint coordinates, and absolute/relative normalized endpoint views. Loop 42 supersedes the original read-only edit boundary by making arc endpoints editable through `availablePoints: ["end"]`; arc flag validation still rejects non-0/1 large-arc and sweep flags with actionable diagnostics.
 - Phase 1 loop 42 extended `edit_path_nodes`, `transform_path_points`, selector schemas, and path validation summaries with bounded `A/a` arc endpoint editing. Arc endpoints are now editable `end` points; `rx`, `ry`, `xAxisRotation`, `largeArcFlag`, and `sweepFlag` are preserved; uppercase `A` stores absolute endpoint coordinates; lowercase `a` stores segment-base-relative endpoint coordinates; and arc `c1`/`c2` selections still reject before snapshot/write. Existing write invariants remain coupled: pre-pull active bidirectional GUI state, validate before snapshot, snapshot before write, operation diff/log on success, and direct active-window `d` attribute sync after successful path data writes.
+- Phase 1 loop 43 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `S/s` smooth cubic command recognition. Smooth cubic segments expose raw `x2`, `y2`, `x`, and `y`, `queryPoints: ["c2", "end"]`, absolute/relative normalized `c2` and endpoint coordinates, and `availablePoints: []` so edit selectors continue rejecting smooth cubic paths before snapshot/write until reflection-aware mutation semantics are specified.
 
 ### 4. Validation & Error Matrix
 
@@ -1585,7 +1586,7 @@ Use radius selection when the caller knows an approximate absolute SVG coordinat
 - Missing arc parameters -> `INVALID_INPUT` with command, segment index, expected/actual/missing parameter counts, token index, and source offset when available.
 - Arc `largeArcFlag` other than `0` or `1` -> `INVALID_INPUT`, no workspace side effects.
 - Arc `sweepFlag` other than `0` or `1` -> `INVALID_INPUT`, no workspace side effects.
-- `query_path_nodes` on a path with unsupported non-arc commands such as `S` or `T` -> `INVALID_INPUT` or document-wide unsupported-path warning.
+- `query_path_nodes` on a path with unsupported commands such as `T` -> `INVALID_INPUT` or document-wide unsupported-path warning.
 - `edit_path_nodes` or `transform_path_points` with arc `c1` or `c2` selection -> `INVALID_INPUT`, no snapshot/write/log/refresh.
 - `transform_path_points` command selector with `A/a` and `pointTypes: ["end"]` -> valid when matching arc endpoints exist.
 - `transform_path_points` selector with `pointTypes: ["c1"]` or `["c2"]` over only arc segments -> empty selector rejection before snapshot/write.
@@ -1635,6 +1636,84 @@ segment.y = nextEndpoint.y;
 ```
 
 Use `queryPoints` for inspection and `availablePoints` for bounded endpoint edit selectors. Future arc geometry work must explicitly introduce a separate contract for radii, rotation, flags, center solving, or arc-to-cubic conversion.
+
+## Scenario: Smooth Cubic Path Read-Only Query Contract
+
+### 1. Scope / Trigger
+
+- Trigger: inspecting SVG path data that includes smooth cubic `S/s` commands before reflection-aware edit semantics exist.
+- Scope: `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` for `S/s` segments.
+- Out of scope: editing `S/s` endpoints or control handles, exposing reflected implicit `c1` as an editable point, converting `S/s` to `C/c`, structured `S/s` segment arrays, shorthand quadratic `T/t`, and GUI node-selection integration.
+
+### 2. Signatures
+
+- Tool: `query_path_nodes({ docId, elementId, normalize?: "none" | "absolute" | "relative", skipPrePull?, allowStaleRead? })`
+- Tool: `query_document({ docId, includePathNodes: true, pathNodeNormalize?: "none" | "absolute" | "relative", responseMode? })`
+- Tool: `validate_path_data({ d, requireMoveTo? })`
+- Smooth cubic raw segment shape:
+
+```json
+{
+  "cmd": "S",
+  "x2": 20,
+  "y2": 8,
+  "x": 22,
+  "y": 10
+}
+```
+
+### 3. Contracts
+
+- `S/s` segments are query-recognized path commands, not editable path commands.
+- Smooth cubic segments expose `queryPoints: ["c2", "end"]`, `points.c2`, `points.end`, `absolutePoints.c2`, and `absolutePoints.end`.
+- Smooth cubic segments expose `availablePoints: []` so selector/edit tooling cannot mutate them before a dedicated edit contract exists.
+- `normalize: "absolute"` reports `c2` and endpoint coordinates in absolute SVG user units.
+- `normalize: "relative"` reports `c2` and endpoint coordinates relative to the segment base point, including for uppercase `S`.
+- Compact document path-node summaries count smooth cubic points through `queryPointCount` and `normalizedPointCount`, while `editablePointCount` excludes them.
+- Read-only query tools must not snapshot, update metadata, append operation logs, write operation-diff artifacts, or refresh Inkscape.
+- `edit_path_nodes` and `transform_path_points` continue to use the editable parser and reject smooth-cubic-containing paths before snapshot/write.
+
+### 4. Validation & Error Matrix
+
+- Missing `S/s` parameters -> `INVALID_INPUT` with command, segment index, expected/actual/missing parameter counts, token index, and source offset when available.
+- `query_path_nodes` on a path with unsupported commands such as `T/t` -> `INVALID_INPUT` or document-wide unsupported-path warning.
+- `edit_path_nodes` or `transform_path_points` on an `S/s`-containing path -> `INVALID_INPUT`, no snapshot/write/log/refresh.
+- `transform_path_points` command selector with `S/s` -> schema/core rejection until `S/s` becomes editable.
+
+### 5. Good/Base/Bad Cases
+
+- Good: inspect `M10 10 C12 12 14 12 16 10 S20 8 22 10` and use the reported `c2` and endpoint coordinates to plan a future safe smooth cubic edit.
+- Good: use `query_document({ includePathNodes: true, pathNodeNormalize: "relative" })` to summarize mixed cubic/smooth-cubic paths without failing the whole query.
+- Base: use `validate_path_data` as a no-workspace preflight for `S/s` syntax and point-count diagnostics.
+- Bad: exposing smooth cubic points in `availablePoints` before edit-side reflected-control semantics exist.
+- Bad: silently converting `S/s` to `C/c` as a side effect of query.
+
+### 6. Tests Required
+
+- Core tests for uppercase and lowercase smooth cubic query segments with raw parameters, `c2`, endpoint points, and absolute endpoints.
+- Core tests for absolute and relative normalized smooth cubic `c2` and endpoint views.
+- Tool-level tests that smooth cubic queries do not write history or call Inkscape refresh/sync.
+- Document-query tests that compact and standard/full responses include smooth cubic summaries without unsupported warnings.
+- Validation tests for valid and malformed smooth cubic parameter sets.
+- Mutation guard tests proving smooth-cubic-containing paths reject in `edit_path_nodes` and `transform_path_points`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Do not silently convert smooth cubic commands during query.
+return { cmd: "C", x1: reflectedX1, y1: reflectedY1, x2, y2, x, y };
+```
+
+#### Correct
+
+```typescript
+segment.queryPoints = ["c2", "end"];
+segment.availablePoints = [];
+```
+
+Use `queryPoints` for read-only inspection and keep `availablePoints` empty until a future task defines how reflected implicit `c1`, endpoint edits, and `c2` edits round-trip without surprising geometry changes.
 
 ## Phase Summary
 

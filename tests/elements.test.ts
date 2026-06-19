@@ -1980,6 +1980,91 @@ describe("element tools", () => {
     await expect(workspace.listHistory("arc-doc")).resolves.toEqual([]);
   });
 
+  it("queries smooth cubic path nodes without treating them as editable", async () => {
+    await workspace.createDocument(
+      "smooth-doc",
+      "Smooth doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="smooth" d="M10 10 C12 12 14 12 16 10 S20 8 22 10 s4 2 6 0" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryPathNodes(
+      {
+        docId: "smooth-doc",
+        elementId: "smooth",
+        normalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "smooth-doc",
+      elementId: "smooth",
+      segmentCount: 4,
+      segments: expect.arrayContaining([
+        expect.objectContaining({
+          index: 2,
+          cmd: "S",
+          queryPoints: ["c2", "end"],
+          availablePoints: [],
+          raw: { cmd: "S", x2: 20, y2: 8, x: 22, y: 10 },
+          absolutePoints: { c2: { x: 20, y: 8 }, end: { x: 22, y: 10 } },
+        }),
+        expect.objectContaining({
+          index: 3,
+          cmd: "s",
+          queryPoints: ["c2", "end"],
+          availablePoints: [],
+          raw: { cmd: "s", x2: 4, y2: 2, x: 6, y: 0 },
+          absolutePoints: { c2: { x: 26, y: 12 }, end: { x: 28, y: 10 } },
+        }),
+      ]),
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        { index: 1, cmd: "C", points: { c1: { x: 2, y: 2 }, c2: { x: 4, y: 2 }, end: { x: 6, y: 0 } } },
+        { index: 2, cmd: "S", points: { c2: { x: 4, y: -2 }, end: { x: 6, y: 0 } } },
+        { index: 3, cmd: "s", points: { c2: { x: 4, y: 2 }, end: { x: 6, y: 0 } } },
+      ],
+    });
+    await expect(workspace.listHistory("smooth-doc")).resolves.toEqual([]);
+  });
+
+  it("rejects smooth cubic node edits without writing history", async () => {
+    await workspace.createDocument(
+      "smooth-invalid-doc",
+      "Smooth invalid doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="smooth" d="M10 10 C12 12 14 12 16 10 S20 8 22 10" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      editPathNodes(
+        {
+          docId: "smooth-invalid-doc",
+          elementId: "smooth",
+          edits: [{ type: "move_point", segmentIndex: 2, point: "end", dx: 1, dy: 0 }],
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("supports only M, L, H, V, C, Q, A, and Z");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("smooth-invalid-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("smooth-invalid-doc")).resolves.toContain('d="M10 10 C12 12 14 12 16 10 S20 8 22 10"');
+  });
+
   it("validates path data without workspace or Inkscape side effects", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
     const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
@@ -2012,6 +2097,19 @@ describe("element tools", () => {
       editablePointSummary: [
         { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
         { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: ["end"] },
+      ],
+    });
+
+    await expect(validatePathDataTool({ d: "M1 1 C2 2 3 3 4 4 S5 5 6 6", requireMoveTo: true })).resolves.toMatchObject({
+      ok: true,
+      segmentCount: 3,
+      commandCounts: { M: 1, C: 1, S: 1 },
+      availablePointCount: 4,
+      queryPointCount: 6,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "C", queryPoints: ["c1", "c2", "end"], availablePoints: ["c1", "c2", "end"] },
+        { segmentIndex: 2, cmd: "S", queryPoints: ["c2", "end"], availablePoints: [] },
       ],
     });
 

@@ -190,6 +190,20 @@ describe("SVG operations", () => {
       ],
     });
 
+    expect(summarizePathDataValidation("M10 10 C12 12 14 12 16 10 S20 8 22 10 s4 2 6 0")).toMatchObject({
+      ok: true,
+      segmentCount: 4,
+      commandCounts: { M: 1, C: 1, S: 1, s: 1 },
+      availablePointCount: 4,
+      queryPointCount: 8,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "C", queryPoints: ["c1", "c2", "end"], availablePoints: ["c1", "c2", "end"] },
+        { segmentIndex: 2, cmd: "S", queryPoints: ["c2", "end"], availablePoints: [] },
+        { segmentIndex: 3, cmd: "s", queryPoints: ["c2", "end"], availablePoints: [] },
+      ],
+    });
+
     expect(summarizePathDataValidation("M10 10 A5 5 0 2 1 20 20")).toMatchObject({
       ok: false,
       error: {
@@ -2339,5 +2353,110 @@ describe("SVG operations", () => {
         transform: { type: "translate", dx: 1, dy: 0 },
       }),
     ).toThrow("no c2 control point");
+  });
+
+  it("queries smooth cubic path segments without marking them editable", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "smooth-path",
+      d: "M10 10 C12 12 14 12 16 10 S20 8 22 10 s4 2 6 0",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const absolute = queryPathNodesInSvg(svg, { elementId: "smooth-path", normalize: "absolute" });
+    expect(absolute).toMatchObject({
+      elementId: "smooth-path",
+      segmentCount: 4,
+      segments: [
+        expect.objectContaining({
+          index: 0,
+          cmd: "M",
+          queryPoints: ["end"],
+          availablePoints: ["end"],
+          absolutePoints: { end: { x: 10, y: 10 } },
+        }),
+        expect.objectContaining({
+          index: 1,
+          cmd: "C",
+          queryPoints: ["c1", "c2", "end"],
+          availablePoints: ["c1", "c2", "end"],
+          absolutePoints: {
+            c1: { x: 12, y: 12 },
+            c2: { x: 14, y: 12 },
+            end: { x: 16, y: 10 },
+          },
+        }),
+        expect.objectContaining({
+          index: 2,
+          cmd: "S",
+          queryPoints: ["c2", "end"],
+          availablePoints: [],
+          raw: { cmd: "S", x2: 20, y2: 8, x: 22, y: 10 },
+          points: {
+            c2: { x: 20, y: 8 },
+            end: { x: 22, y: 10 },
+          },
+          absolutePoints: {
+            c2: { x: 20, y: 8 },
+            end: { x: 22, y: 10 },
+          },
+        }),
+        expect.objectContaining({
+          index: 3,
+          cmd: "s",
+          queryPoints: ["c2", "end"],
+          availablePoints: [],
+          raw: { cmd: "s", x2: 4, y2: 2, x: 6, y: 0 },
+          absolutePoints: {
+            c2: { x: 26, y: 12 },
+            end: { x: 28, y: 10 },
+          },
+        }),
+      ],
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        {
+          index: 1,
+          cmd: "C",
+          points: {
+            c1: { x: 12, y: 12 },
+            c2: { x: 14, y: 12 },
+            end: { x: 16, y: 10 },
+          },
+        },
+        { index: 2, cmd: "S", points: { c2: { x: 20, y: 8 }, end: { x: 22, y: 10 } } },
+        { index: 3, cmd: "s", points: { c2: { x: 26, y: 12 }, end: { x: 28, y: 10 } } },
+      ],
+    });
+
+    const relative = queryPathNodesInSvg(svg, { elementId: "smooth-path", normalize: "relative" });
+    expect(relative.normalizedSegments).toMatchObject([
+      { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+      { index: 1, cmd: "C", points: { c1: { x: 2, y: 2 }, c2: { x: 4, y: 2 }, end: { x: 6, y: 0 } } },
+      { index: 2, cmd: "S", points: { c2: { x: 4, y: -2 }, end: { x: 6, y: 0 } } },
+      { index: 3, cmd: "s", points: { c2: { x: 4, y: 2 }, end: { x: 6, y: 0 } } },
+    ]);
+  });
+
+  it("rejects smooth cubic path edits before mutation", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "smooth-path",
+      d: "M10 10 C12 12 14 12 16 10 S20 8 22 10",
+      attributes: { fill: "none" },
+    }).svg;
+
+    expect(() =>
+      editPathNodesInSvg(svg, {
+        elementId: "smooth-path",
+        edits: [{ type: "move_point", segmentIndex: 2, point: "end", dx: 1, dy: 0 }],
+      }),
+    ).toThrow("supports only M, L, H, V, C, Q, A, and Z");
+
+    expect(() =>
+      transformPathPointsInSvg(svg, {
+        elementId: "smooth-path",
+        pointSelector: { points: [{ segmentIndex: 2, point: "c2" }] },
+        transform: { type: "translate", dx: 1, dy: 0 },
+      }),
+    ).toThrow("supports only M, L, H, V, C, Q, A, and Z");
   });
 });

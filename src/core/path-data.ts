@@ -28,7 +28,15 @@ export type ArcPathSegment = {
   y: number;
 };
 
-export type QueryPathSegment = EditablePathSegment | ArcPathSegment;
+export type SmoothCubicPathSegment = {
+  cmd: "S" | "s";
+  x2: number;
+  y2: number;
+  x: number;
+  y: number;
+};
+
+export type QueryPathSegment = EditablePathSegment | SmoothCubicPathSegment;
 
 export type EditablePathPoint = "end" | "c1" | "c2";
 
@@ -433,6 +441,14 @@ function describePathSegments(segments: QueryPathSegment[]): QueryPathSegmentInf
         absolutePoints.end = resolvePathPoint(base, points.end, relative);
         current = absolutePoints.end;
         break;
+      case "S":
+      case "s":
+        points.c2 = { x: segment.x2, y: segment.y2 };
+        points.end = { x: segment.x, y: segment.y };
+        absolutePoints.c2 = resolvePathPoint(base, points.c2, relative);
+        absolutePoints.end = resolvePathPoint(base, points.end, relative);
+        current = absolutePoints.end;
+        break;
       case "Q":
       case "q":
         points.c1 = { x: segment.x1, y: segment.y1 };
@@ -771,8 +787,8 @@ function assertQueryPathCommand(
   command: string,
   details: Record<string, unknown> = {},
 ): asserts command is QueryPathSegment["cmd"] {
-  if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "A", "a", "Z", "z"].includes(command)) {
-    throw new InkMcpError("INVALID_INPUT", "query_path_nodes supports only M, L, H, V, C, Q, A, and Z path commands.", {
+  if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "S", "s", "Q", "q", "A", "a", "Z", "z"].includes(command)) {
+    throw new InkMcpError("INVALID_INPUT", "query_path_nodes supports only M, L, H, V, C, S, Q, A, and Z path commands.", {
       command,
       ...details,
     });
@@ -987,6 +1003,9 @@ function querySegmentFromValues(command: string | undefined, values: number[]): 
     case "Z":
     case "z":
       return editableSegmentFromValues(command, values);
+    case "S":
+    case "s":
+      return { cmd: command, x2: values[0], y2: values[1], x: values[2], y: values[3] };
     case "A":
     case "a":
       return {
@@ -1308,6 +1327,9 @@ function queryPathPoints(segment: QueryPathSegment): EditablePathPoint[] {
     case "C":
     case "c":
       return ["c1", "c2", "end"];
+    case "S":
+    case "s":
+      return ["c2", "end"];
     case "Q":
     case "q":
       return ["c1", "end"];
@@ -1318,5 +1340,6 @@ function queryPathPoints(segment: QueryPathSegment): EditablePathPoint[] {
 }
 
 function availablePathPoints(segment: QueryPathSegment): EditablePathPoint[] {
+  if (segment.cmd === "S" || segment.cmd === "s") return [];
   return queryPathPoints(segment);
 }

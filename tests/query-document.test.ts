@@ -96,13 +96,13 @@ describe("query_document semantic helpers", () => {
       ok: true,
       responseMode: "compact",
       counts: {
-        pathCount: 3,
-        describedPathCount: 3,
+        pathCount: 4,
+        describedPathCount: 4,
         unsupportedPathCount: 0,
       },
       pathNodes: {
-        totalPathCount: 3,
-        describedPathCount: 3,
+        totalPathCount: 4,
+        describedPathCount: 4,
         unsupportedPathCount: 0,
         paths: [
           {
@@ -126,6 +126,14 @@ describe("query_document semantic helpers", () => {
             commandCounts: { M: 1, A: 1 },
             editablePointCount: 2,
             queryPointCount: 2,
+          },
+          {
+            elementId: "smooth",
+            pathIndex: 3,
+            segmentCount: 4,
+            commandCounts: { M: 1, C: 1, S: 1, s: 1 },
+            editablePointCount: 4,
+            queryPointCount: 8,
           },
         ],
         warnings: [],
@@ -157,9 +165,9 @@ describe("query_document semantic helpers", () => {
       ok: true,
       responseMode: "compact",
       counts: {
-        pathCount: 3,
-        describedPathCount: 3,
-        normalizedPathCount: 3,
+        pathCount: 4,
+        describedPathCount: 4,
+        normalizedPathCount: 4,
         unsupportedPathCount: 0,
       },
       pathNodes: {
@@ -182,6 +190,12 @@ describe("query_document semantic helpers", () => {
             normalize: "absolute",
             normalizedPointCount: 2,
             normalizedCommandPoints: { M: ["end"], A: ["end"] },
+          }),
+          expect.objectContaining({
+            elementId: "smooth",
+            normalize: "absolute",
+            normalizedPointCount: 8,
+            normalizedCommandPoints: { M: ["end"], C: ["c1", "c2", "end"], S: ["c2", "end"], s: ["c2", "end"] },
           }),
         ],
         warnings: [],
@@ -213,9 +227,9 @@ describe("query_document semantic helpers", () => {
       ok: true,
       responseMode: "compact",
       counts: {
-        pathCount: 3,
-        describedPathCount: 3,
-        normalizedPathCount: 3,
+        pathCount: 4,
+        describedPathCount: 4,
+        normalizedPathCount: 4,
         unsupportedPathCount: 0,
       },
       pathNodes: {
@@ -238,6 +252,12 @@ describe("query_document semantic helpers", () => {
             normalize: "relative",
             normalizedPointCount: 2,
             normalizedCommandPoints: { M: ["end"], A: ["end"] },
+          }),
+          expect.objectContaining({
+            elementId: "smooth",
+            normalize: "relative",
+            normalizedPointCount: 8,
+            normalizedCommandPoints: { M: ["end"], C: ["c1", "c2", "end"], S: ["c2", "end"], s: ["c2", "end"] },
           }),
         ],
         warnings: [],
@@ -312,8 +332,8 @@ describe("query_document semantic helpers", () => {
       ok: true,
       responseMode: "standard",
       pathNodes: {
-        totalPathCount: 3,
-        describedPathCount: 3,
+        totalPathCount: 4,
+        describedPathCount: 4,
         unsupportedPathCount: 0,
         paths: expect.arrayContaining([
           expect.objectContaining({
@@ -374,6 +394,33 @@ describe("query_document semantic helpers", () => {
                 },
                 points: { end: { x: 30, y: 30 } },
                 absolutePoints: { end: { x: 30, y: 30 } },
+              }),
+            ]),
+          }),
+          expect.objectContaining({
+            elementId: "smooth",
+            d: "M10 10 C12 12 14 12 16 10 S20 8 22 10 s4 2 6 0",
+            segmentCount: 4,
+            commandCounts: { M: 1, C: 1, S: 1, s: 1 },
+            editablePointCount: 4,
+            queryPointCount: 8,
+            segments: expect.arrayContaining([
+              expect.objectContaining({
+                index: 2,
+                cmd: "S",
+                queryPoints: ["c2", "end"],
+                availablePoints: [],
+                raw: { cmd: "S", x2: 20, y2: 8, x: 22, y: 10 },
+                points: { c2: { x: 20, y: 8 }, end: { x: 22, y: 10 } },
+                absolutePoints: { c2: { x: 20, y: 8 }, end: { x: 22, y: 10 } },
+              }),
+              expect.objectContaining({
+                index: 3,
+                cmd: "s",
+                queryPoints: ["c2", "end"],
+                availablePoints: [],
+                raw: { cmd: "s", x2: 4, y2: 2, x: 6, y: 0 },
+                absolutePoints: { c2: { x: 26, y: 12 }, end: { x: 28, y: 10 } },
               }),
             ]),
           }),
@@ -655,6 +702,7 @@ function svgWithMixedPaths(): string {
     <path id="body" d="M10 30 C25 5 70 5 90 30 L10 30 Z" fill="#facc15" stroke="#111827"/>
     <path id="relative-fin" d="M35 32 l12 8 l-18 2" fill="none" stroke="#111827"/>
     <path id="arc" d="M20 20 A5 5 0 0 1 30 30" fill="none" stroke="#111827"/>
+    <path id="smooth" d="M10 10 C12 12 14 12 16 10 S20 8 22 10 s4 2 6 0" fill="none" stroke="#111827"/>
   </g>
 </svg>`;
 }
