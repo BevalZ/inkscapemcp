@@ -182,11 +182,11 @@ describe("SVG operations", () => {
       ok: true,
       segmentCount: 2,
       commandCounts: { M: 1, A: 1 },
-      availablePointCount: 1,
+      availablePointCount: 2,
       queryPointCount: 2,
       editablePointSummary: [
         { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
-        { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: [] },
+        { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: ["end"] },
       ],
     });
 
@@ -2153,7 +2153,7 @@ describe("SVG operations", () => {
     });
   });
 
-  it("queries arc path segments without marking arc endpoints editable", () => {
+  it("queries arc path segments and marks only arc endpoints editable", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "arc-path",
       d: "M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2",
@@ -2177,7 +2177,7 @@ describe("SVG operations", () => {
           index: 1,
           cmd: "A",
           queryPoints: ["end"],
-          availablePoints: [],
+          availablePoints: ["end"],
           raw: {
             cmd: "A",
             rx: 5,
@@ -2195,7 +2195,7 @@ describe("SVG operations", () => {
           index: 2,
           cmd: "a",
           queryPoints: ["end"],
-          availablePoints: [],
+          availablePoints: ["end"],
           points: { end: { x: 5, y: -2 } },
           absolutePoints: { end: { x: 25, y: 23 } },
         },
@@ -2215,7 +2215,110 @@ describe("SVG operations", () => {
     ]);
   });
 
-  it("rejects node editing for unsupported path commands", () => {
+  it("edits arc endpoints while preserving arc parameters and command storage", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "arc-path",
+      d: "M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const moved = editPathNodesInSvg(svg, {
+      elementId: "arc-path",
+      edits: [
+        { type: "move_point", segmentIndex: 1, point: "end", dx: 2, dy: -3 },
+        { type: "set_point_absolute", segmentIndex: 2, point: "end", x: 30, y: 24 },
+      ],
+    });
+    expect(moved.result.nextD).toBe("M10 10 A5 6 45 0 1 22 22 a3 4 0 1 0 8 2");
+
+    const setRelative = editPathNodesInSvg(svg, {
+      elementId: "arc-path",
+      edits: [
+        { type: "set_point_relative", segmentIndex: 1, point: "end", x: 12, y: 14 },
+        { type: "set_point_relative", segmentIndex: 2, point: "end", x: 7, y: -4 },
+      ],
+    });
+    expect(setRelative.result.nextD).toBe("M10 10 A5 6 45 0 1 22 24 a3 4 0 1 0 7 -4");
+  });
+
+  it("transforms selected arc endpoints through existing selectors", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "arc-path",
+      d: "M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const translated = transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "command", commands: ["A", "a"], pointTypes: ["end"] },
+      transform: { type: "translate", dx: 1, dy: 2 },
+    });
+    expect(translated.result).toMatchObject({
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      nextD: "M10 10 A5 6 45 0 1 21 27 a3 4 0 1 0 6 0",
+    });
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "bbox", minX: 19, minY: 24, maxX: 21, maxY: 26, pointTypes: ["end"] },
+      transform: { type: "scale", origin: { x: 10, y: 10 }, sx: 2, sy: 1 },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 30 25 a3 4 0 1 0 5 -2");
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "nearest", x: 25, y: 23, pointTypes: ["end"], maxDistance: 1 },
+      transform: { type: "rotate", origin: { x: 20, y: 23 }, angleDegrees: 90 },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 0 3");
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "radius", x: 20, y: 25, radius: 0, pointTypes: ["end"] },
+      transform: { type: "reflect", axis: "vertical", origin: { x: 10, y: 10 } },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 0 25 a3 4 0 1 0 5 -2");
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "segment_list", segmentIndexes: [1], pointTypes: ["end"] },
+      transform: { type: "reflect_line", origin: { x: 10, y: 10 }, angleDegrees: 0 },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 20 -5 a3 4 0 1 0 5 -2");
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "segment_range", startSegmentIndex: 1, endSegmentIndex: 2, pointTypes: ["end"] },
+      transform: { type: "skew", axis: "x", origin: { x: 10, y: 10 }, angleDegrees: 45 },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 35 25 a3 4 0 1 0 3 -2");
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "point_type", pointTypes: ["end"] },
+      transform: {
+        type: "set_absolute",
+        points: [
+          { x: 10, y: 10 },
+          { x: 21, y: 26 },
+          { x: 30, y: 24 },
+        ],
+      },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 21 26 a3 4 0 1 0 9 -2");
+
+    expect(transformPathPointsInSvg(svg, {
+      elementId: "arc-path",
+      pointSelector: { type: "command", commands: ["A", "a"], pointTypes: ["end"] },
+      transform: {
+        type: "set_relative",
+        points: [
+          { x: 12, y: 14 },
+          { x: 7, y: -4 },
+        ],
+      },
+    }).result.nextD).toBe("M10 10 A5 6 45 0 1 22 24 a3 4 0 1 0 7 -4");
+  });
+
+  it("rejects arc control point edits before mutation", () => {
     const svg = drawPathInSvg(baseSvg, {
       elementId: "arc-path",
       d: "M1 1 A5 5 0 0 1 10 10",
@@ -2225,24 +2328,16 @@ describe("SVG operations", () => {
     expect(() =>
       editPathNodesInSvg(svg, {
         elementId: "arc-path",
-        edits: [{ type: "move_point", segmentIndex: 1, point: "end", dx: 1, dy: 0 }],
+        edits: [{ type: "move_point", segmentIndex: 1, point: "c1", dx: 1, dy: 0 }],
       }),
-    ).toThrow("supports only M, L, H, V, C, Q, and Z");
-  });
-
-  it("rejects point transforms for unsupported path commands", () => {
-    const svg = drawPathInSvg(baseSvg, {
-      elementId: "arc-path",
-      d: "M1 1 A5 5 0 0 1 10 10",
-      attributes: { fill: "none" },
-    }).svg;
+    ).toThrow("no c1 control point");
 
     expect(() =>
       transformPathPointsInSvg(svg, {
         elementId: "arc-path",
-        pointSelector: { points: [{ segmentIndex: 1, point: "end" }] },
+        pointSelector: { points: [{ segmentIndex: 1, point: "c2" }] },
         transform: { type: "translate", dx: 1, dy: 0 },
       }),
-    ).toThrow("supports only M, L, H, V, C, Q, and Z");
+    ).toThrow("no c2 control point");
   });
 });

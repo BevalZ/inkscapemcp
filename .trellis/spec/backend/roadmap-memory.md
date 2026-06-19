@@ -124,7 +124,8 @@ Phase 3 candidate tool families:
 - Phase 1 loop 38 strengthened `diagnose_inkscape_gui` with a read-only companion extension self-check. Diagnostics now report installed file presence for both `.inx` files, `inksmcp_pull.py`, and `inksmcp-extension.json`; validate pull/push extension ids, derived active-window action ids, hidden action parameters, Python command declarations, config JSON shape, and configured `workspaceRoot`; and compare the configured root to the current MCP workspace. Missing files, stale declarations, invalid config, missing roots, and mismatched workspace roots produce structured warnings/remediation while preserving the no-snapshot/no-log/no-refresh diagnostic boundary.
 - Phase 1 loop 39 added an in-process monotonic `generation` to explicit GUI sync polling. `start_gui_sync_polling` and restored persisted polling entries assign a positive runtime generation, `get_gui_sync_status` exposes it for diagnostics, and timer callbacks carry their creation generation and no-op if the current registry entry is missing, stopped, or from a newer generation. Generation is not written to `.polling.json`; it only guards the current MCP server process against stale queued callbacks after stop/restart/reload.
 - Phase 1 loop 40 established `apply_merge_preview` as the explicit mutation boundary for saved GUI merge preview artifacts. It requires `confirmApplyPreview: true`, applies only artifacts under `workspace/drawings/{docId}/merge-previews/`, records/uses artifact baselines when available, rejects unguarded or stale applies before snapshot/write, pre-pulls active bidirectional GUI state before baseline comparison, snapshots before replacing `current.svg`, writes operation-diff diagnostics, appends a compact operation log, and uses structural companion-extension refresh. `list_merge_previews` and `read_merge_preview` remain read-only inspection tools.
-- Phase 1 loop 41 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `A/a` arc path command recognition. Arc segments expose raw arc parameters plus `queryPoints: ["end"]`, absolute endpoint coordinates, and absolute/relative normalized endpoint views, but keep `availablePoints: []` so `edit_path_nodes` and `transform_path_points` continue rejecting arc-containing paths before snapshot/write. Arc flag validation rejects non-0/1 large-arc and sweep flags with actionable diagnostics.
+- Phase 1 loop 41 extended `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` with read-only `A/a` arc path command recognition. Arc segments expose raw arc parameters plus `queryPoints: ["end"]`, absolute endpoint coordinates, and absolute/relative normalized endpoint views. Loop 42 supersedes the original read-only edit boundary by making arc endpoints editable through `availablePoints: ["end"]`; arc flag validation still rejects non-0/1 large-arc and sweep flags with actionable diagnostics.
+- Phase 1 loop 42 extended `edit_path_nodes`, `transform_path_points`, selector schemas, and path validation summaries with bounded `A/a` arc endpoint editing. Arc endpoints are now editable `end` points; `rx`, `ry`, `xAxisRotation`, `largeArcFlag`, and `sweepFlag` are preserved; uppercase `A` stores absolute endpoint coordinates; lowercase `a` stores segment-base-relative endpoint coordinates; and arc `c1`/`c2` selections still reject before snapshot/write. Existing write invariants remain coupled: pre-pull active bidirectional GUI state, validate before snapshot, snapshot before write, operation diff/log on success, and direct active-window `d` attribute sync after successful path data writes.
 
 ### 4. Validation & Error Matrix
 
@@ -1533,19 +1534,21 @@ await transformPathPoints({
 
 Use radius selection when the caller knows an approximate absolute SVG coordinate and wants a local group of editable path points. Resolve the selector inside `transform_path_points` so pre-pull, validation, snapshot-first write, diagnostics, operation logs, and direct `d` sync stay coupled.
 
-## Scenario: Arc Path Read-Only Query Contract
+## Scenario: Arc Endpoint Editing Contract
 
 ### 1. Scope / Trigger
 
-- Trigger: inspecting SVG path data that includes elliptical arc commands before any future arc editing work.
-- Scope: `query_path_nodes`, `query_document({ includePathNodes: true })`, and `validate_path_data` for `A/a` segments.
-- Out of scope: editing arc endpoints, radii, rotations, flags, converting arcs to cubic curves, renderer-accurate center parameterization, and adding shorthand curve support.
+- Trigger: editing SVG path data that includes elliptical arc commands after the read-only arc query boundary has been established.
+- Scope: `query_path_nodes`, `query_document({ includePathNodes: true })`, `validate_path_data`, `edit_path_nodes`, and `transform_path_points` for `A/a` segment endpoints.
+- Out of scope: editing arc radii, rotations, flags, center parameterization, arc-to-cubic conversion, renderer-accurate arc solving, structured `A/a` segment arrays, and shorthand curve support.
 
 ### 2. Signatures
 
 - Tool: `query_path_nodes({ docId, elementId, normalize?: "none" | "absolute" | "relative", skipPrePull?, allowStaleRead? })`
 - Tool: `query_document({ docId, includePathNodes: true, pathNodeNormalize?: "none" | "absolute" | "relative", responseMode? })`
 - Tool: `validate_path_data({ d, requireMoveTo? })`
+- Tool: `edit_path_nodes({ docId, elementId, edits })`
+- Tool: `transform_path_points({ docId, elementId, pointSelector, transform })`
 - Arc raw segment shape:
 
 ```json
@@ -1563,14 +1566,19 @@ Use radius selection when the caller knows an approximate absolute SVG coordinat
 
 ### 3. Contracts
 
-- `A/a` segments are query-recognized path commands, not editable path commands.
-- Arc segments expose `queryPoints: ["end"]`, `points.end`, and `absolutePoints.end`.
-- Arc segments expose `availablePoints: []` so selector/edit tooling cannot treat arc endpoints as editable by accident.
+- `A/a` segments are raw editable path commands for endpoint operations only.
+- Arc segments expose `queryPoints: ["end"]`, `availablePoints: ["end"]`, `points.end`, and `absolutePoints.end`.
 - `normalize: "absolute"` reports arc endpoint coordinates in absolute SVG user units.
 - `normalize: "relative"` reports arc endpoint coordinates relative to the segment base point, including for uppercase `A`.
-- Compact document path-node summaries count arc endpoints through `queryPointCount` and `normalizedPointCount`, while `editablePointCount` excludes the arc endpoint.
+- Compact document path-node summaries count arc endpoints through `queryPointCount`, `normalizedPointCount`, and `editablePointCount`.
 - Read-only query tools must not snapshot, update metadata, append operation logs, write operation-diff artifacts, or refresh Inkscape.
-- `edit_path_nodes` and `transform_path_points` continue to use the editable parser and reject arc-containing paths before snapshot/write.
+- `edit_path_nodes` may apply `move_point`, `set_point_absolute`, and `set_point_relative` to arc `end` points.
+- `transform_path_points` selectors that iterate `availablePoints` may select arc endpoints, including explicit, bbox, segment range, segment list, command, point type, nearest, and radius selectors.
+- `transform_path_points` transforms may translate, set absolute, set relative, scale, rotate, reflect, reflect-line, and skew selected arc endpoints through the existing absolute-target mapping pipeline.
+- Arc parameter fields `rx`, `ry`, `xAxisRotation`, `largeArcFlag`, and `sweepFlag` must round-trip unchanged through endpoint edits.
+- Uppercase `A` stores absolute endpoint coordinates after edits; lowercase `a` stores endpoint coordinates relative to the segment base point after edits.
+- Arc `c1` and `c2` are not available points and explicit attempts to select them must reject before snapshot/write.
+- Successful write tools preserve the target path element id and object tree, snapshot current SVG first, update metadata, write operation-diff diagnostics, append a compact operation log, and directly sync the active Inkscape window with `object-set-attribute:d`.
 
 ### 4. Validation & Error Matrix
 
@@ -1578,14 +1586,20 @@ Use radius selection when the caller knows an approximate absolute SVG coordinat
 - Arc `largeArcFlag` other than `0` or `1` -> `INVALID_INPUT`, no workspace side effects.
 - Arc `sweepFlag` other than `0` or `1` -> `INVALID_INPUT`, no workspace side effects.
 - `query_path_nodes` on a path with unsupported non-arc commands such as `S` or `T` -> `INVALID_INPUT` or document-wide unsupported-path warning.
-- `edit_path_nodes` or `transform_path_points` on an arc-containing path -> `INVALID_INPUT`, no snapshot/write/log/refresh.
+- `edit_path_nodes` or `transform_path_points` with arc `c1` or `c2` selection -> `INVALID_INPUT`, no snapshot/write/log/refresh.
+- `transform_path_points` command selector with `A/a` and `pointTypes: ["end"]` -> valid when matching arc endpoints exist.
+- `transform_path_points` selector with `pointTypes: ["c1"]` or `["c2"]` over only arc segments -> empty selector rejection before snapshot/write.
+- Active bidirectional pre-pull failure before an arc endpoint write -> sync/Inkscape error, no MCP write.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: inspect `M10 10 A5 6 45 0 1 20 25` and use the reported absolute endpoint to plan a future safe arc edit.
+- Good: edit `M10 10 A5 6 45 0 1 20 25` to `M10 10 A5 6 45 0 1 22 24`; only the endpoint changes.
+- Good: edit `a3 4 0 1 0 5 -2` with `set_point_relative` to `a3 4 0 1 0 7 -4`; arc parameters and relative storage remain intact.
+- Good: use `transform_path_points` with `{ type: "command", commands: ["A", "a"], pointTypes: ["end"] }` to adjust only arc endpoints.
 - Good: use `query_document({ includePathNodes: true, pathNodeNormalize: "relative" })` to summarize mixed line/curve/arc paths without failing the whole query.
 - Base: use `validate_path_data` as a no-workspace preflight for arc syntax and flag diagnostics.
-- Bad: exposing arc endpoints in `availablePoints` before edit-side arc mutation semantics exist.
+- Bad: changing `rx`, `ry`, `xAxisRotation`, `largeArcFlag`, or `sweepFlag` as a side effect of endpoint movement.
+- Bad: converting arcs to cubic curves to make endpoint edits easier.
 - Bad: silently converting arcs to cubic curves as a side effect of query.
 
 ### 6. Tests Required
@@ -1595,25 +1609,32 @@ Use radius selection when the caller knows an approximate absolute SVG coordinat
 - Tool-level tests that arc queries do not write history or call Inkscape refresh/sync.
 - Document-query tests that compact and standard/full responses include arc summaries without unsupported warnings.
 - Validation tests for malformed arc parameter sets and invalid arc flags.
-- Mutation guard tests proving arc-containing paths still reject in `edit_path_nodes` and `transform_path_points`.
+- Core tests that `edit_path_nodes` moves and sets uppercase and lowercase arc endpoints while preserving arc parameters and storage form.
+- Core tests that `transform_path_points` can select arc endpoints through every selector family and apply every transform family.
+- Schema tests that command selectors accept `A/a` and continue rejecting unsupported commands.
+- Tool-level tests that successful arc endpoint writes snapshot, log, write operation diagnostics, return previous/next `d`, and use direct active-window `d` sync.
+- Tool-level tests that invalid arc `c1`/`c2` selections leave `current.svg`, history, operation logs, operation-diff artifacts, and Inkscape refresh untouched.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```typescript
-// Wrong until full arc mutation semantics are implemented.
-segment.availablePoints = ["end"];
+// Do not mutate arc parameters or convert the segment to another command family.
+segment.rx = segment.rx * scaleFactor;
+segment.cmd = "C";
 ```
 
 #### Correct
 
 ```typescript
 segment.queryPoints = ["end"];
-segment.availablePoints = [];
+segment.availablePoints = ["end"];
+segment.x = nextEndpoint.x;
+segment.y = nextEndpoint.y;
 ```
 
-Use `queryPoints` for read-only inspection and `availablePoints` for edit selectors. Future arc editing must explicitly change the edit contract and add round-trip tests for endpoint, radii, rotation, and flags.
+Use `queryPoints` for inspection and `availablePoints` for bounded endpoint edit selectors. Future arc geometry work must explicitly introduce a separate contract for radii, rotation, flags, center solving, or arc-to-cubic conversion.
 
 ## Phase Summary
 

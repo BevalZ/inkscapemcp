@@ -312,7 +312,7 @@ const pathPointSegmentListSelectorSchema = z.object({
   }
 });
 
-const editablePathCommandSchema = z.enum(["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "Z", "z"]);
+const editablePathCommandSchema = z.enum(["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "A", "a", "Z", "z"]);
 
 const pathPointCommandSelectorSchema = z.object({
   type: z.literal("command"),

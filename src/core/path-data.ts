@@ -14,6 +14,7 @@ export type EditablePathSegment =
   | { cmd: "V" | "v"; y: number }
   | { cmd: "C" | "c"; x1: number; y1: number; x2: number; y2: number; x: number; y: number }
   | { cmd: "Q" | "q"; x1: number; y1: number; x: number; y: number }
+  | ArcPathSegment
   | { cmd: "Z" | "z" };
 
 export type ArcPathSegment = {
@@ -213,6 +214,9 @@ export function editablePathSegmentsToD(segments: EditablePathSegment[]): string
       case "Q":
       case "q":
         return `${segment.cmd}${formatPathNumber(segment.x1)} ${formatPathNumber(segment.y1)} ${formatPathNumber(segment.x)} ${formatPathNumber(segment.y)}`;
+      case "A":
+      case "a":
+        return `${segment.cmd}${formatPathNumber(segment.rx)} ${formatPathNumber(segment.ry)} ${formatPathNumber(segment.xAxisRotation)} ${formatPathNumber(segment.largeArcFlag)} ${formatPathNumber(segment.sweepFlag)} ${formatPathNumber(segment.x)} ${formatPathNumber(segment.y)}`;
       case "Z":
       case "z":
         return segment.cmd;
@@ -755,8 +759,8 @@ function assertEditablePathCommand(
   command: string,
   details: Record<string, unknown> = {},
 ): asserts command is EditablePathSegment["cmd"] {
-  if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "Z", "z"].includes(command)) {
-    throw new InkMcpError("INVALID_INPUT", "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.", {
+  if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "A", "a", "Z", "z"].includes(command)) {
+    throw new InkMcpError("INVALID_INPUT", "edit_path_nodes supports only M, L, H, V, C, Q, A, and Z path commands.", {
       command,
       ...details,
     });
@@ -944,6 +948,18 @@ function editableSegmentFromValues(command: string | undefined, values: number[]
     case "Q":
     case "q":
       return { cmd: command, x1: values[0], y1: values[1], x: values[2], y: values[3] };
+    case "A":
+    case "a":
+      return {
+        cmd: command,
+        rx: values[0],
+        ry: values[1],
+        xAxisRotation: values[2],
+        largeArcFlag: values[3],
+        sweepFlag: values[4],
+        x: values[5],
+        y: values[6],
+      };
     case "Z":
     case "z":
       return { cmd: command };
@@ -1188,6 +1204,8 @@ function editableSegmentBase(segments: EditablePathSegment[], segmentIndex: numb
       case "c":
       case "Q":
       case "q":
+      case "A":
+      case "a":
         current = resolvePathPoint(current, { x: segment.x, y: segment.y }, relative);
         break;
       case "Z":
@@ -1300,6 +1318,5 @@ function queryPathPoints(segment: QueryPathSegment): EditablePathPoint[] {
 }
 
 function availablePathPoints(segment: QueryPathSegment): EditablePathPoint[] {
-  if (segment.cmd === "A" || segment.cmd === "a") return [];
   return queryPathPoints(segment);
 }

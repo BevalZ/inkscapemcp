@@ -543,11 +543,30 @@ describe("path tool validation", () => {
         elementId: "line",
         pointSelector: {
           type: "command",
-          commands: ["A"],
+          commands: ["S"],
         },
         transform: { type: "translate", dx: 2 },
       }),
     ).toThrow();
+
+    expect(
+      transformPathPointsSchema.parse({
+        docId: "path-doc",
+        elementId: "line",
+        pointSelector: {
+          type: "command",
+          commands: ["A", "a"],
+          pointTypes: ["end"],
+        },
+        transform: { type: "translate", dx: 2 },
+      }),
+    ).toMatchObject({
+      pointSelector: {
+        type: "command",
+        commands: ["A", "a"],
+        pointTypes: ["end"],
+      },
+    });
 
     expect(() =>
       transformPathPointsSchema.parse({

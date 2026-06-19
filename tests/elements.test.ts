@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -362,6 +362,66 @@ describe("element tools", () => {
     const history = await workspace.listHistory("axis-doc");
     expect(history).toHaveLength(1);
     expect(history[0].snapshotId).toContain("edit_path_nodes");
+  });
+
+  it("edits arc endpoints with snapshots, diagnostics, logs, and direct sync", async () => {
+    await workspace.createDocument(
+      "arc-edit-doc",
+      "Arc edit doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="arc" d="M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await editPathNodes(
+      {
+        docId: "arc-edit-doc",
+        elementId: "arc",
+        edits: [
+          { type: "move_point", segmentIndex: 1, point: "end", dx: 2, dy: -3 },
+          { type: "set_point_absolute", segmentIndex: 2, point: "end", x: 30, y: 24 },
+        ],
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    const expectedD = "M10 10 A5 6 45 0 1 22 22 a3 4 0 1 0 8 2";
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "arc", attributeName: "d", value: expectedD }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "arc",
+      editCount: 2,
+      changed: {
+        d: {
+          from: "M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2",
+          to: expectedD,
+        },
+      },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+      operationDiff: {
+        summary: {
+          changedElementCount: 1,
+        },
+      },
+    });
+    await expect(workspace.readSvg("arc-edit-doc")).resolves.toContain(`d="${expectedD}"`);
+    const history = await workspace.listHistory("arc-edit-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("edit_path_nodes");
+    const log = await readFile(workspace.documentPaths("arc-edit-doc").operationsLog, "utf8");
+    expect(log).toContain("edit_path_nodes");
   });
 
   it("rejects non-representable H/V exact node sets without writing history", async () => {
@@ -1248,6 +1308,103 @@ describe("element tools", () => {
     await expect(workspace.readSvg("sync-doc")).resolves.toContain('d="M100 30c18 4 31 1 41-9"');
   });
 
+  it("transforms arc endpoints through command selectors with direct sync", async () => {
+    await workspace.createDocument(
+      "arc-transform-doc",
+      "Arc transform doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="arc" d="M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes").mockResolvedValue({
+      binaryPath: "inkscape",
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    });
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await transformPathPoints(
+      {
+        docId: "arc-transform-doc",
+        elementId: "arc",
+        pointSelector: { type: "command", commands: ["A", "a"], pointTypes: ["end"] },
+        transform: {
+          type: "set_relative",
+          points: [
+            { x: 12, y: 14 },
+            { x: 7, y: -4 },
+          ],
+        },
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    const expectedD = "M10 10 A5 6 45 0 1 22 24 a3 4 0 1 0 7 -4";
+    expect(sync).toHaveBeenCalledWith({
+      updates: [{ elementId: "arc", attributeName: "d", value: expectedD }],
+      timeoutMs: undefined,
+    });
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      elementId: "arc",
+      selectedPointCount: 2,
+      selectedPoints: [
+        { segmentIndex: 1, point: "end" },
+        { segmentIndex: 2, point: "end" },
+      ],
+      editedSegments: [1, 2],
+      changed: {
+        d: {
+          from: "M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2",
+          to: expectedD,
+        },
+      },
+      guiRefresh: { method: "active_window_attribute_sync", refreshed: true },
+      operationDiff: {
+        summary: {
+          changedElementCount: 1,
+        },
+      },
+    });
+    await expect(workspace.readSvg("arc-transform-doc")).resolves.toContain(`d="${expectedD}"`);
+    const history = await workspace.listHistory("arc-transform-doc");
+    expect(history).toHaveLength(1);
+    expect(history[0].snapshotId).toContain("transform_path_points");
+  });
+
+  it("rejects arc control point transforms without writing history", async () => {
+    await workspace.createDocument(
+      "arc-invalid-doc",
+      "Arc invalid doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="arc" d="M10 10 A5 6 45 0 1 20 25" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    await expect(
+      transformPathPoints(
+        {
+          docId: "arc-invalid-doc",
+          elementId: "arc",
+          pointSelector: { points: [{ segmentIndex: 1, point: "c1" }] },
+          transform: { type: "translate", dx: 1, dy: 0 },
+        },
+        { workspace, inkscape, autoRefresh: { enabled: true } },
+      ),
+    ).rejects.toThrow("no c1 control point");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    await expect(workspace.listHistory("arc-invalid-doc")).resolves.toEqual([]);
+    await expect(workspace.readSvg("arc-invalid-doc")).resolves.toContain('d="M10 10 A5 6 45 0 1 20 25"');
+  });
+
   it("rejects non-representable H/V node edits without writing history", async () => {
     await workspace.createDocument(
       "axis-doc",
@@ -1754,7 +1911,7 @@ describe("element tools", () => {
     await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
   });
 
-  it("queries arc path nodes without treating arc endpoints as editable", async () => {
+  it("queries arc path nodes with editable arc endpoints without write side effects", async () => {
     await workspace.createDocument(
       "arc-doc",
       "Arc doc",
@@ -1793,7 +1950,7 @@ describe("element tools", () => {
           index: 1,
           cmd: "A",
           queryPoints: ["end"],
-          availablePoints: [],
+          availablePoints: ["end"],
           raw: {
             cmd: "A",
             rx: 5,
@@ -1810,7 +1967,7 @@ describe("element tools", () => {
           index: 2,
           cmd: "a",
           queryPoints: ["end"],
-          availablePoints: [],
+          availablePoints: ["end"],
           absolutePoints: { end: { x: 25, y: 23 } },
         }),
       ],
@@ -1850,11 +2007,11 @@ describe("element tools", () => {
       ok: true,
       segmentCount: 2,
       commandCounts: { M: 1, A: 1 },
-      availablePointCount: 1,
+      availablePointCount: 2,
       queryPointCount: 2,
       editablePointSummary: [
         { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
-        { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: [] },
+        { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: ["end"] },
       ],
     });
 
