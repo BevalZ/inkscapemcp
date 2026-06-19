@@ -1754,6 +1754,75 @@ describe("element tools", () => {
     await expect(workspace.listHistory("sync-doc")).resolves.toEqual([]);
   });
 
+  it("queries arc path nodes without treating arc endpoints as editable", async () => {
+    await workspace.createDocument(
+      "arc-doc",
+      "Arc doc",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100px" height="100px" viewBox="0 0 100 100">
+  <path id="arc" d="M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2" fill="none"/>
+</svg>`,
+    );
+    const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
+    const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
+
+    const result = await queryPathNodes(
+      {
+        docId: "arc-doc",
+        elementId: "arc",
+        normalize: "relative",
+      },
+      { workspace, inkscape, autoRefresh: { enabled: true } },
+    );
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(companion).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      docId: "arc-doc",
+      elementId: "arc",
+      segmentCount: 3,
+      segments: [
+        expect.objectContaining({
+          index: 0,
+          cmd: "M",
+          queryPoints: ["end"],
+          availablePoints: ["end"],
+        }),
+        expect.objectContaining({
+          index: 1,
+          cmd: "A",
+          queryPoints: ["end"],
+          availablePoints: [],
+          raw: {
+            cmd: "A",
+            rx: 5,
+            ry: 6,
+            xAxisRotation: 45,
+            largeArcFlag: 0,
+            sweepFlag: 1,
+            x: 20,
+            y: 25,
+          },
+          absolutePoints: { end: { x: 20, y: 25 } },
+        }),
+        expect.objectContaining({
+          index: 2,
+          cmd: "a",
+          queryPoints: ["end"],
+          availablePoints: [],
+          absolutePoints: { end: { x: 25, y: 23 } },
+        }),
+      ],
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        { index: 1, cmd: "A", points: { end: { x: 10, y: 15 } } },
+        { index: 2, cmd: "a", points: { end: { x: 5, y: -2 } } },
+      ],
+    });
+    await expect(workspace.listHistory("arc-doc")).resolves.toEqual([]);
+  });
+
   it("validates path data without workspace or Inkscape side effects", async () => {
     const sync = vi.spyOn(inkscape, "syncActiveWindowAttributes");
     const companion = vi.spyOn(inkscape, "refreshActiveWindowWithCompanionExtension");
@@ -1778,16 +1847,27 @@ describe("element tools", () => {
     });
 
     await expect(validatePathDataTool({ d: "M1 1 A2 2 0 0 1 3 3", requireMoveTo: true })).resolves.toMatchObject({
+      ok: true,
+      segmentCount: 2,
+      commandCounts: { M: 1, A: 1 },
+      availablePointCount: 1,
+      queryPointCount: 2,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: [] },
+      ],
+    });
+
+    await expect(validatePathDataTool({ d: "M1 1 A2 2 0 0 3 3 3", requireMoveTo: true })).resolves.toMatchObject({
       ok: false,
       error: {
         code: "INVALID_INPUT",
+        message: "Arc path sweep flag must be 0 or 1.",
         details: {
           command: "A",
           segmentIndex: 1,
-          commandIndex: 1,
-          commandTokenIndex: 3,
-          offset: 5,
-          expectedParamCount: 7,
+          flag: "sweepFlag",
+          value: 3,
         },
       },
     });

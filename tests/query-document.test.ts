@@ -97,13 +97,13 @@ describe("query_document semantic helpers", () => {
       responseMode: "compact",
       counts: {
         pathCount: 3,
-        describedPathCount: 2,
-        unsupportedPathCount: 1,
+        describedPathCount: 3,
+        unsupportedPathCount: 0,
       },
       pathNodes: {
         totalPathCount: 3,
-        describedPathCount: 2,
-        unsupportedPathCount: 1,
+        describedPathCount: 3,
+        unsupportedPathCount: 0,
         paths: [
           {
             elementId: "body",
@@ -119,15 +119,16 @@ describe("query_document semantic helpers", () => {
             commandCounts: { M: 1, l: 2 },
             relativeSegmentCount: 2,
           },
-        ],
-        warnings: [
           {
-            code: "UNSUPPORTED_PATH_DATA",
             elementId: "arc",
             pathIndex: 2,
-            details: { command: "A" },
+            segmentCount: 2,
+            commandCounts: { M: 1, A: 1 },
+            editablePointCount: 1,
+            queryPointCount: 2,
           },
         ],
+        warnings: [],
       },
     });
     expect(result.pathNodes?.paths[0]).not.toHaveProperty("segments");
@@ -157,9 +158,9 @@ describe("query_document semantic helpers", () => {
       responseMode: "compact",
       counts: {
         pathCount: 3,
-        describedPathCount: 2,
-        normalizedPathCount: 2,
-        unsupportedPathCount: 1,
+        describedPathCount: 3,
+        normalizedPathCount: 3,
+        unsupportedPathCount: 0,
       },
       pathNodes: {
         normalize: "absolute",
@@ -176,7 +177,14 @@ describe("query_document semantic helpers", () => {
             normalizedPointCount: 3,
             normalizedCommandPoints: { M: ["end"], l: ["end"] },
           }),
+          expect.objectContaining({
+            elementId: "arc",
+            normalize: "absolute",
+            normalizedPointCount: 2,
+            normalizedCommandPoints: { M: ["end"], A: ["end"] },
+          }),
         ],
+        warnings: [],
       },
     });
     expect(result.pathNodes?.paths[0]).not.toHaveProperty("segments");
@@ -206,9 +214,9 @@ describe("query_document semantic helpers", () => {
       responseMode: "compact",
       counts: {
         pathCount: 3,
-        describedPathCount: 2,
-        normalizedPathCount: 2,
-        unsupportedPathCount: 1,
+        describedPathCount: 3,
+        normalizedPathCount: 3,
+        unsupportedPathCount: 0,
       },
       pathNodes: {
         normalize: "relative",
@@ -225,15 +233,14 @@ describe("query_document semantic helpers", () => {
             normalizedPointCount: 3,
             normalizedCommandPoints: { M: ["end"], l: ["end"] },
           }),
-        ],
-        warnings: [
-          {
-            code: "UNSUPPORTED_PATH_DATA",
+          expect.objectContaining({
             elementId: "arc",
-            pathIndex: 2,
-            details: { command: "A" },
-          },
+            normalize: "relative",
+            normalizedPointCount: 2,
+            normalizedCommandPoints: { M: ["end"], A: ["end"] },
+          }),
         ],
+        warnings: [],
       },
     });
     expect(result.pathNodes?.paths[0]).not.toHaveProperty("segments");
@@ -306,8 +313,8 @@ describe("query_document semantic helpers", () => {
       responseMode: "standard",
       pathNodes: {
         totalPathCount: 3,
-        describedPathCount: 2,
-        unsupportedPathCount: 1,
+        describedPathCount: 3,
+        unsupportedPathCount: 0,
         paths: expect.arrayContaining([
           expect.objectContaining({
             elementId: "body",
@@ -342,14 +349,36 @@ describe("query_document semantic helpers", () => {
               }),
             ]),
           }),
-        ]),
-        warnings: [
-          {
-            code: "UNSUPPORTED_PATH_DATA",
+          expect.objectContaining({
             elementId: "arc",
-            message: "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.",
-          },
-        ],
+            d: "M20 20 A5 5 0 0 1 30 30",
+            segmentCount: 2,
+            commandCounts: { M: 1, A: 1 },
+            editablePointCount: 1,
+            queryPointCount: 2,
+            segments: expect.arrayContaining([
+              expect.objectContaining({
+                index: 1,
+                cmd: "A",
+                queryPoints: ["end"],
+                availablePoints: [],
+                raw: {
+                  cmd: "A",
+                  rx: 5,
+                  ry: 5,
+                  xAxisRotation: 0,
+                  largeArcFlag: 0,
+                  sweepFlag: 1,
+                  x: 30,
+                  y: 30,
+                },
+                points: { end: { x: 30, y: 30 } },
+                absolutePoints: { end: { x: 30, y: 30 } },
+              }),
+            ]),
+          }),
+        ]),
+        warnings: [],
       },
     });
     expect(result).toHaveProperty("tree");
@@ -377,38 +406,53 @@ describe("query_document semantic helpers", () => {
           expect.objectContaining({
             elementId: "relative-fin",
             d: "M35 32 l12 8 l-18 2",
-            normalizedSegments: [
-              {
+            normalizedSegments: expect.arrayContaining([
+              expect.objectContaining({
                 index: 0,
                 cmd: "M",
                 relative: false,
                 availablePoints: ["end"],
                 points: { end: { x: 35, y: 32 } },
-              },
-              {
+              }),
+              expect.objectContaining({
                 index: 1,
                 cmd: "l",
                 relative: true,
                 availablePoints: ["end"],
                 points: { end: { x: 47, y: 40 } },
-              },
-              {
+              }),
+              expect.objectContaining({
                 index: 2,
                 cmd: "l",
                 relative: true,
                 availablePoints: ["end"],
                 points: { end: { x: 29, y: 42 } },
-              },
-            ],
+              }),
+            ]),
+          }),
+          expect.objectContaining({
+            elementId: "arc",
+            normalizedSegments: expect.arrayContaining([
+              expect.objectContaining({
+                index: 0,
+                cmd: "M",
+                relative: false,
+                queryPoints: ["end"],
+                availablePoints: ["end"],
+                points: { end: { x: 20, y: 20 } },
+              }),
+              expect.objectContaining({
+                index: 1,
+                cmd: "A",
+                relative: false,
+                queryPoints: ["end"],
+                availablePoints: [],
+                points: { end: { x: 30, y: 30 } },
+              }),
+            ]),
           }),
         ]),
-        warnings: [
-          {
-            code: "UNSUPPORTED_PATH_DATA",
-            elementId: "arc",
-            details: { command: "A" },
-          },
-        ],
+        warnings: [],
       },
     });
     expect(result.pathNodes?.paths.find((path) => path.elementId === "relative-fin")).toHaveProperty("segments");
@@ -433,13 +477,7 @@ describe("query_document semantic helpers", () => {
       responseMode: "standard",
       pathNodes: {
         normalize: "relative",
-        warnings: [
-          {
-            code: "UNSUPPORTED_PATH_DATA",
-            elementId: "arc",
-            details: { command: "A" },
-          },
-        ],
+        warnings: [],
       },
     });
     const bodyPath = result.pathNodes?.paths.find((path) => path.elementId === "body");

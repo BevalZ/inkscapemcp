@@ -3,7 +3,7 @@
   "name": "phase1-arc-path-query-support",
   "title": "Phase 1 arc path query support",
   "description": "Add read-only arc path segment query support while keeping arc editing guarded.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

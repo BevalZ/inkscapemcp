@@ -179,17 +179,27 @@ describe("SVG operations", () => {
     });
 
     expect(summarizePathDataValidation("M10 10 A5 5 0 0 1 20 20")).toMatchObject({
+      ok: true,
+      segmentCount: 2,
+      commandCounts: { M: 1, A: 1 },
+      availablePointCount: 1,
+      queryPointCount: 2,
+      editablePointSummary: [
+        { segmentIndex: 0, cmd: "M", queryPoints: ["end"], availablePoints: ["end"] },
+        { segmentIndex: 1, cmd: "A", queryPoints: ["end"], availablePoints: [] },
+      ],
+    });
+
+    expect(summarizePathDataValidation("M10 10 A5 5 0 2 1 20 20")).toMatchObject({
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        message: "edit_path_nodes supports only M, L, H, V, C, Q, and Z path commands.",
+        message: "Arc path large-arc flag must be 0 or 1.",
         details: {
           command: "A",
           segmentIndex: 1,
-          commandIndex: 1,
-          commandTokenIndex: 3,
-          offset: 7,
-          expectedParamCount: 7,
+          flag: "largeArcFlag",
+          value: 2,
         },
       },
     });
@@ -2141,6 +2151,68 @@ describe("SVG operations", () => {
       points: { end: { x: 15, y: 11 } },
       absolutePoints: { end: { x: 15, y: 11 } },
     });
+  });
+
+  it("queries arc path segments without marking arc endpoints editable", () => {
+    const svg = drawPathInSvg(baseSvg, {
+      elementId: "arc-path",
+      d: "M10 10 A5 6 45 0 1 20 25 a3 4 0 1 0 5 -2",
+      attributes: { fill: "none" },
+    }).svg;
+
+    const absolute = queryPathNodesInSvg(svg, { elementId: "arc-path", normalize: "absolute" });
+    expect(absolute).toMatchObject({
+      elementId: "arc-path",
+      segmentCount: 3,
+      segments: [
+        {
+          index: 0,
+          cmd: "M",
+          queryPoints: ["end"],
+          availablePoints: ["end"],
+          points: { end: { x: 10, y: 10 } },
+          absolutePoints: { end: { x: 10, y: 10 } },
+        },
+        {
+          index: 1,
+          cmd: "A",
+          queryPoints: ["end"],
+          availablePoints: [],
+          raw: {
+            cmd: "A",
+            rx: 5,
+            ry: 6,
+            xAxisRotation: 45,
+            largeArcFlag: 0,
+            sweepFlag: 1,
+            x: 20,
+            y: 25,
+          },
+          points: { end: { x: 20, y: 25 } },
+          absolutePoints: { end: { x: 20, y: 25 } },
+        },
+        {
+          index: 2,
+          cmd: "a",
+          queryPoints: ["end"],
+          availablePoints: [],
+          points: { end: { x: 5, y: -2 } },
+          absolutePoints: { end: { x: 25, y: 23 } },
+        },
+      ],
+      normalizedSegments: [
+        { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+        { index: 1, cmd: "A", points: { end: { x: 20, y: 25 } } },
+        { index: 2, cmd: "a", points: { end: { x: 25, y: 23 } } },
+      ],
+    });
+
+    const relative = queryPathNodesInSvg(svg, { elementId: "arc-path", normalize: "relative" });
+    expect(relative.normalizedSegments).toMatchObject([
+      { index: 0, cmd: "M", points: { end: { x: 10, y: 10 } } },
+      { index: 1, cmd: "A", points: { end: { x: 10, y: 15 } } },
+      { index: 2, cmd: "a", points: { end: { x: 5, y: -2 } } },
+    ]);
   });
 
   it("rejects node editing for unsupported path commands", () => {

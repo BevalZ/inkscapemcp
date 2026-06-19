@@ -2,12 +2,12 @@ import type { Element as XmlElement } from "@xmldom/xmldom";
 
 import { InkMcpError } from "./errors.js";
 import {
-  describeEditablePathData,
-  normalizedEditablePathPoints,
-  normalizedEditablePathSegments,
-  type EditablePathSegmentInfo,
-  type NormalizedEditablePathSegmentInfo,
+  describePathDataForQuery,
+  normalizedPathPoints,
+  normalizedQueryPathSegments,
   type PathNodeNormalizeMode,
+  type QueryPathSegmentInfo,
+  type NormalizedQueryPathSegmentInfo,
 } from "./path-data.js";
 import { walkElements } from "./validation.js";
 
@@ -26,6 +26,7 @@ export interface CompactPathNodeSummary {
   commandCounts: Record<string, number>;
   relativeSegmentCount: number;
   editablePointCount: number;
+  queryPointCount: number;
   normalize?: PathNodeNormalizeMode;
   normalizedPointCount?: number;
   normalizedCommandPoints?: Record<string, string[]>;
@@ -33,11 +34,11 @@ export interface CompactPathNodeSummary {
 
 export interface FullPathNodeSummary extends CompactPathNodeSummary {
   d: string;
-  segments: EditablePathSegmentInfo[];
+  segments: QueryPathSegmentInfo[];
   normalizedSegments?: NormalizedPathNodeSegmentSummary[];
 }
 
-export type NormalizedPathNodeSegmentSummary = NormalizedEditablePathSegmentInfo;
+export type NormalizedPathNodeSegmentSummary = NormalizedQueryPathSegmentInfo;
 
 export type QueryPathNodeSummary = {
   totalPathCount: number;
@@ -74,7 +75,7 @@ export function summarizePathNodesForQuery(
     }
 
     try {
-      const segments = describeEditablePathData(d);
+      const segments = describePathDataForQuery(d);
       const compact = compactPathNodeSummary({ elementId, pathIndex, segments, normalize: options.normalize });
       paths.push(
         includeSegments
@@ -82,7 +83,7 @@ export function summarizePathNodesForQuery(
               ...compact,
               d,
               segments,
-              ...(normalize ? { normalizedSegments: normalizedEditablePathSegments(segments, normalize) } : {}),
+              ...(normalize ? { normalizedSegments: normalizedQueryPathSegments(segments, normalize) } : {}),
             }
           : compact,
       );
@@ -104,7 +105,7 @@ export function summarizePathNodesForQuery(
 function compactPathNodeSummary(input: {
   elementId?: string;
   pathIndex: number;
-  segments: EditablePathSegmentInfo[];
+  segments: QueryPathSegmentInfo[];
   normalize?: "none" | PathNodeNormalizeMode;
 }): CompactPathNodeSummary {
   const normalize = normalizedMode(input.normalize);
@@ -115,11 +116,12 @@ function compactPathNodeSummary(input: {
     commandCounts: commandCounts(input.segments),
     relativeSegmentCount: input.segments.filter((segment) => segment.relative).length,
     editablePointCount: input.segments.reduce((sum, segment) => sum + segment.availablePoints.length, 0),
+    queryPointCount: input.segments.reduce((sum, segment) => sum + segment.queryPoints.length, 0),
     ...(normalize
       ? {
           normalize,
           normalizedPointCount: input.segments.reduce(
-            (sum, segment) => sum + Object.keys(normalizedEditablePathPoints(segment, normalize)).length,
+            (sum, segment) => sum + Object.keys(normalizedPathPoints(segment, normalize)).length,
             0,
           ),
           normalizedCommandPoints: normalizedCommandPoints(input.segments, normalize),
@@ -133,13 +135,13 @@ function normalizedMode(normalize: "none" | PathNodeNormalizeMode | undefined): 
 }
 
 function normalizedCommandPoints(
-  segments: EditablePathSegmentInfo[],
+  segments: QueryPathSegmentInfo[],
   normalize: PathNodeNormalizeMode,
 ): Record<string, string[]> {
   const points: Record<string, Set<string>> = {};
   for (const segment of segments) {
     const commandPoints = points[segment.cmd] ?? new Set<string>();
-    for (const pointName of Object.keys(normalizedEditablePathPoints(segment, normalize)).sort()) {
+    for (const pointName of Object.keys(normalizedPathPoints(segment, normalize)).sort()) {
       commandPoints.add(pointName);
     }
     points[segment.cmd] = commandPoints;
@@ -147,7 +149,7 @@ function normalizedCommandPoints(
   return Object.fromEntries(Object.entries(points).map(([command, names]) => [command, [...names].sort()]));
 }
 
-function commandCounts(segments: EditablePathSegmentInfo[]): Record<string, number> {
+function commandCounts(segments: QueryPathSegmentInfo[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const segment of segments) {
     counts[segment.cmd] = (counts[segment.cmd] ?? 0) + 1;

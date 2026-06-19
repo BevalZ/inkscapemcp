@@ -16,29 +16,50 @@ export type EditablePathSegment =
   | { cmd: "Q" | "q"; x1: number; y1: number; x: number; y: number }
   | { cmd: "Z" | "z" };
 
+export type ArcPathSegment = {
+  cmd: "A" | "a";
+  rx: number;
+  ry: number;
+  xAxisRotation: number;
+  largeArcFlag: number;
+  sweepFlag: number;
+  x: number;
+  y: number;
+};
+
+export type QueryPathSegment = EditablePathSegment | ArcPathSegment;
+
 export type EditablePathPoint = "end" | "c1" | "c2";
 
 export type EditablePathPointMap = Partial<Record<EditablePathPoint, { x: number; y: number }>>;
 export type PathNodeNormalizeMode = "absolute" | "relative";
 
-export interface EditablePathSegmentInfo {
+export interface PathSegmentInfo<TSegment extends QueryPathSegment = QueryPathSegment> {
   index: number;
-  cmd: EditablePathSegment["cmd"];
+  cmd: TSegment["cmd"];
   relative: boolean;
   basePoint: { x: number; y: number };
-  raw: EditablePathSegment;
+  raw: TSegment;
+  queryPoints: EditablePathPoint[];
   availablePoints: EditablePathPoint[];
   points: EditablePathPointMap;
   absolutePoints: EditablePathPointMap;
 }
 
-export interface NormalizedEditablePathSegmentInfo {
+export type EditablePathSegmentInfo = PathSegmentInfo<EditablePathSegment>;
+export type QueryPathSegmentInfo = PathSegmentInfo<QueryPathSegment>;
+
+export interface NormalizedPathSegmentInfo<TSegmentInfo extends PathSegmentInfo = QueryPathSegmentInfo> {
   index: number;
-  cmd: EditablePathSegmentInfo["cmd"];
+  cmd: TSegmentInfo["cmd"];
   relative: boolean;
-  availablePoints: EditablePathSegmentInfo["availablePoints"];
+  queryPoints: EditablePathPoint[];
+  availablePoints: EditablePathPoint[];
   points: EditablePathPointMap;
 }
+
+export type NormalizedEditablePathSegmentInfo = NormalizedPathSegmentInfo<EditablePathSegmentInfo>;
+export type NormalizedQueryPathSegmentInfo = NormalizedPathSegmentInfo<QueryPathSegmentInfo>;
 
 export type PathNodeEdit =
   | {
@@ -102,10 +123,12 @@ export interface PathDataValidationSummary {
   relativeCommandCount: number;
   absoluteCommandCount: number;
   availablePointCount: number;
+  queryPointCount: number;
   editablePointSummary: Array<{
     segmentIndex: number;
-    cmd: EditablePathSegment["cmd"];
+    cmd: QueryPathSegment["cmd"];
     relative: boolean;
+    queryPoints: EditablePathPoint[];
     availablePoints: EditablePathPoint[];
   }>;
 }
@@ -245,9 +268,62 @@ export function parseEditablePathData(pathData: string): EditablePathSegment[] {
   return segments;
 }
 
+export function parsePathDataForQuery(pathData: string): QueryPathSegment[] {
+  validatePathData(pathData, { requireMoveTo: true });
+  const tokens = tokenizePathData(pathData.trim());
+  const segments: QueryPathSegment[] = [];
+  let index = 0;
+  let currentCommand: string | undefined;
+
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token.type === "command") {
+      currentCommand = token.value;
+      index += 1;
+    } else if (!currentCommand) {
+      throw new InkMcpError("INVALID_INPUT", "Path number appeared before any command.");
+    }
+
+    const command = currentCommand;
+    if (!command) {
+      throw new InkMcpError("INVALID_INPUT", "Path command is missing.");
+    }
+    assertQueryPathCommand(command);
+
+    if (command === "Z" || command === "z") {
+      segments.push({ cmd: command });
+      currentCommand = undefined;
+      continue;
+    }
+
+    const paramCount = commandParamCounts[command];
+    while (index < tokens.length && tokens[index].type !== "command") {
+      const values: number[] = [];
+      for (let paramIndex = 0; paramIndex < paramCount; paramIndex += 1) {
+        const value = tokens[index];
+        if (!value || value.type !== "number") {
+          throw new InkMcpError("INVALID_INPUT", "Path command has an incomplete parameter set.", { command });
+        }
+        values.push(Number(value.value));
+        index += 1;
+      }
+      segments.push(querySegmentFromValues(currentCommand, values));
+      if (currentCommand === "M") currentCommand = "L";
+      if (currentCommand === "m") currentCommand = "l";
+    }
+  }
+
+  return segments;
+}
+
 export function describeEditablePathData(pathData: string): EditablePathSegmentInfo[] {
   const segments = parseEditablePathData(pathData);
-  return describeEditablePathSegments(segments);
+  return describePathSegments(segments) as EditablePathSegmentInfo[];
+}
+
+export function describePathDataForQuery(pathData: string): QueryPathSegmentInfo[] {
+  const segments = parsePathDataForQuery(pathData);
+  return describePathSegments(segments);
 }
 
 export function normalizedEditablePathSegments(
@@ -258,8 +334,23 @@ export function normalizedEditablePathSegments(
     index: segment.index,
     cmd: segment.cmd,
     relative: segment.relative,
+    queryPoints: segment.queryPoints,
     availablePoints: segment.availablePoints,
     points: normalizedEditablePathPoints(segment, mode),
+  }));
+}
+
+export function normalizedQueryPathSegments(
+  segments: QueryPathSegmentInfo[],
+  mode: PathNodeNormalizeMode,
+): NormalizedQueryPathSegmentInfo[] {
+  return segments.map((segment) => ({
+    index: segment.index,
+    cmd: segment.cmd,
+    relative: segment.relative,
+    queryPoints: segment.queryPoints,
+    availablePoints: segment.availablePoints,
+    points: normalizedPathPoints(segment, mode),
   }));
 }
 
@@ -267,10 +358,17 @@ export function normalizedEditablePathPoints(
   segment: EditablePathSegmentInfo,
   mode: PathNodeNormalizeMode,
 ): EditablePathPointMap {
+  return normalizedPathPoints(segment, mode);
+}
+
+export function normalizedPathPoints(
+  segment: QueryPathSegmentInfo,
+  mode: PathNodeNormalizeMode,
+): EditablePathPointMap {
   if (mode === "absolute") return segment.absolutePoints;
 
   const points: EditablePathPointMap = {};
-  for (const pointName of segment.availablePoints) {
+  for (const pointName of segment.queryPoints) {
     const absolutePoint = segment.absolutePoints[pointName];
     if (!absolutePoint) continue;
     points[pointName] = {
@@ -281,7 +379,7 @@ export function normalizedEditablePathPoints(
   return points;
 }
 
-function describeEditablePathSegments(segments: EditablePathSegment[]): EditablePathSegmentInfo[] {
+function describePathSegments(segments: QueryPathSegment[]): QueryPathSegmentInfo[] {
   let current = { x: 0, y: 0 };
   let subpathStart = { x: 0, y: 0 };
 
@@ -339,6 +437,12 @@ function describeEditablePathSegments(segments: EditablePathSegment[]): Editable
         absolutePoints.end = resolvePathPoint(base, points.end, relative);
         current = absolutePoints.end;
         break;
+      case "A":
+      case "a":
+        points.end = { x: segment.x, y: segment.y };
+        absolutePoints.end = resolvePathPoint(base, points.end, relative);
+        current = absolutePoints.end;
+        break;
       case "Z":
       case "z":
         current = subpathStart;
@@ -351,6 +455,7 @@ function describeEditablePathSegments(segments: EditablePathSegment[]): Editable
       relative,
       basePoint: { ...base },
       raw: segment,
+      queryPoints: queryPathPoints(segment),
       availablePoints: availablePathPoints(segment),
       points,
       absolutePoints,
@@ -486,6 +591,7 @@ export function validatePathData(pathData: string, options: PathDataValidationOp
           ),
         });
       }
+      const values: number[] = [];
       for (let paramIndex = 0; paramIndex < paramCount; paramIndex += 1) {
         const value = tokens[index];
         if (!value || value.type !== "number") {
@@ -502,8 +608,13 @@ export function validatePathData(pathData: string, options: PathDataValidationOp
             ),
           });
         }
+        values.push(Number(value.value));
         index += 1;
       }
+      validatePathCommandParameters(currentCommand, values, {
+        ...commandDiagnosticDetails(currentCommand, currentCommandContext, segmentIndex),
+        expectedParamCount: paramCount,
+      });
       consumed += paramCount;
       segmentIndex += 1;
       if (currentCommand === "M") currentCommand = "L";
@@ -542,12 +653,13 @@ export function summarizePathDataValidation(
   const d = pathData.trim();
   const requireMoveTo = options.requireMoveTo !== false;
   try {
-    validatePathData(d, { requireMoveTo, requireEditableCommands: true });
-    const segments = describeEditablePathDataWithOptions(d, { requireMoveTo });
+    validatePathData(d, { requireMoveTo });
+    const segments = describePathDataForQueryWithOptions(d, { requireMoveTo });
     const commandCounts: Record<string, number> = {};
     let relativeCommandCount = 0;
     let absoluteCommandCount = 0;
     let availablePointCount = 0;
+    let queryPointCount = 0;
     const editablePointSummary = segments.map((segment) => {
       commandCounts[segment.cmd] = (commandCounts[segment.cmd] ?? 0) + 1;
       if (segment.relative) {
@@ -556,10 +668,12 @@ export function summarizePathDataValidation(
         absoluteCommandCount += 1;
       }
       availablePointCount += segment.availablePoints.length;
+      queryPointCount += segment.queryPoints.length;
       return {
         segmentIndex: segment.index,
         cmd: segment.cmd,
         relative: segment.relative,
+        queryPoints: segment.queryPoints,
         availablePoints: segment.availablePoints,
       };
     });
@@ -573,6 +687,7 @@ export function summarizePathDataValidation(
       relativeCommandCount,
       absoluteCommandCount,
       availablePointCount,
+      queryPointCount,
       editablePointSummary,
     };
   } catch (error) {
@@ -646,6 +761,50 @@ function assertEditablePathCommand(
       ...details,
     });
   }
+}
+
+function assertQueryPathCommand(
+  command: string,
+  details: Record<string, unknown> = {},
+): asserts command is QueryPathSegment["cmd"] {
+  if (!["M", "m", "L", "l", "H", "h", "V", "v", "C", "c", "Q", "q", "A", "a", "Z", "z"].includes(command)) {
+    throw new InkMcpError("INVALID_INPUT", "query_path_nodes supports only M, L, H, V, C, Q, A, and Z path commands.", {
+      command,
+      ...details,
+    });
+  }
+}
+
+function validatePathCommandParameters(
+  command: string | undefined,
+  values: number[],
+  details: Record<string, unknown>,
+): void {
+  if (command !== "A" && command !== "a") return;
+  const largeArcFlag = values[3];
+  const sweepFlag = values[4];
+  if (!isArcFlag(largeArcFlag)) {
+    throw new InkMcpError("INVALID_INPUT", "Arc path large-arc flag must be 0 or 1.", {
+      command,
+      flag: "largeArcFlag",
+      value: largeArcFlag,
+      paramIndex: 3,
+      ...details,
+    });
+  }
+  if (!isArcFlag(sweepFlag)) {
+    throw new InkMcpError("INVALID_INPUT", "Arc path sweep flag must be 0 or 1.", {
+      command,
+      flag: "sweepFlag",
+      value: sweepFlag,
+      paramIndex: 4,
+      ...details,
+    });
+  }
+}
+
+function isArcFlag(value: number): boolean {
+  return value === 0 || value === 1;
 }
 
 function commandDiagnosticDetails(
@@ -747,6 +906,21 @@ function describeEditablePathDataWithOptions(
   }));
 }
 
+function describePathDataForQueryWithOptions(
+  pathData: string,
+  options: PathDataValidationOptions,
+): QueryPathSegmentInfo[] {
+  const requireMoveTo = options.requireMoveTo !== false;
+  if (requireMoveTo) return describePathDataForQuery(pathData);
+
+  const syntheticPath = `M0 0 ${pathData}`;
+  const segments = describePathDataForQuery(syntheticPath);
+  return segments.slice(1).map((segment, index) => ({
+    ...segment,
+    index,
+  }));
+}
+
 function editableSegmentFromValues(command: string | undefined, values: number[]): EditablePathSegment {
   if (!command) {
     throw new InkMcpError("INVALID_INPUT", "Path command is missing.");
@@ -773,6 +947,42 @@ function editableSegmentFromValues(command: string | undefined, values: number[]
     case "Z":
     case "z":
       return { cmd: command };
+  }
+}
+
+function querySegmentFromValues(command: string | undefined, values: number[]): QueryPathSegment {
+  if (!command) {
+    throw new InkMcpError("INVALID_INPUT", "Path command is missing.");
+  }
+  assertQueryPathCommand(command);
+  switch (command) {
+    case "M":
+    case "m":
+    case "L":
+    case "l":
+    case "H":
+    case "h":
+    case "V":
+    case "v":
+    case "C":
+    case "c":
+    case "Q":
+    case "q":
+    case "Z":
+    case "z":
+      return editableSegmentFromValues(command, values);
+    case "A":
+    case "a":
+      return {
+        cmd: command,
+        rx: values[0],
+        ry: values[1],
+        xAxisRotation: values[2],
+        largeArcFlag: values[3],
+        sweepFlag: values[4],
+        x: values[5],
+        y: values[6],
+      };
   }
 }
 
@@ -921,7 +1131,7 @@ function currentEditablePoint(
   segments: EditablePathSegment[],
   edit: { segmentIndex: number; point: EditablePathPoint },
 ): { base: { x: number; y: number }; relative: boolean } {
-  const info = describeEditablePathSegments(segments)[edit.segmentIndex];
+  const info = (describePathSegments(segments) as EditablePathSegmentInfo[])[edit.segmentIndex];
   if (!info) {
     throw new InkMcpError("INVALID_INPUT", "Path segment index is out of range.", {
       segmentIndex: edit.segmentIndex,
@@ -1055,7 +1265,7 @@ function samePathCoordinate(left: number, right: number): boolean {
   return Math.abs(left - right) <= 1e-9;
 }
 
-function isRelativeCommand(command: EditablePathSegment["cmd"]): boolean {
+function isRelativeCommand(command: QueryPathSegment["cmd"]): boolean {
   if (command === "Z" || command === "z") return false;
   return command === command.toLowerCase() && command !== command.toUpperCase();
 }
@@ -1064,7 +1274,7 @@ function resolvePathPoint(base: { x: number; y: number }, point: { x: number; y:
   return relative ? { x: base.x + point.x, y: base.y + point.y } : point;
 }
 
-function availablePathPoints(segment: EditablePathSegment): EditablePathPoint[] {
+function queryPathPoints(segment: QueryPathSegment): EditablePathPoint[] {
   switch (segment.cmd) {
     case "M":
     case "m":
@@ -1074,6 +1284,8 @@ function availablePathPoints(segment: EditablePathSegment): EditablePathPoint[] 
     case "h":
     case "V":
     case "v":
+    case "A":
+    case "a":
       return ["end"];
     case "C":
     case "c":
@@ -1085,4 +1297,9 @@ function availablePathPoints(segment: EditablePathSegment): EditablePathPoint[] 
     case "z":
       return [];
   }
+}
+
+function availablePathPoints(segment: QueryPathSegment): EditablePathPoint[] {
+  if (segment.cmd === "A" || segment.cmd === "a") return [];
+  return queryPathPoints(segment);
 }

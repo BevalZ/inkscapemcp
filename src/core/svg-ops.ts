@@ -4,14 +4,16 @@ import { assertSafeElementId, createElementId, makeUniqueElementId } from "./ids
 import {
   applyPathNodeEdits,
   describeEditablePathData,
-  normalizedEditablePathSegments,
+  describePathDataForQuery,
+  normalizedQueryPathSegments,
   pathDataFromInput,
   type EditablePathPoint,
   type EditablePathSegmentInfo,
-  type NormalizedEditablePathSegmentInfo,
+  type NormalizedQueryPathSegmentInfo,
   type PathNodeNormalizeMode,
   type PathNodeEdit,
   type PathSegment,
+  type QueryPathSegmentInfo,
 } from "./path-data.js";
 import {
   collectElementIds,
@@ -92,12 +94,12 @@ export interface PathNodesQueryResult {
   elementId: string;
   d: string;
   segmentCount: number;
-  segments: EditablePathSegmentInfo[];
+  segments: QueryPathSegmentInfo[];
   normalize?: PathNodeNormalizeMode;
   normalizedSegments?: NormalizedPathSegmentInfo[];
 }
 
-export type NormalizedPathSegmentInfo = NormalizedEditablePathSegmentInfo;
+export type NormalizedPathSegmentInfo = NormalizedQueryPathSegmentInfo;
 
 export interface PathPointSelection {
   segmentIndex: number;
@@ -412,7 +414,7 @@ export function queryPathNodesInSvg(
   if (!d) {
     throw new InkMcpError("INVALID_INPUT", "Path element has no d attribute.", { elementId: input.elementId });
   }
-  const segments = describeEditablePathData(d);
+  const segments = describePathDataForQuery(d);
   return {
     elementId: input.elementId,
     d,
@@ -421,7 +423,7 @@ export function queryPathNodesInSvg(
     ...(input.normalize === "absolute" || input.normalize === "relative"
       ? {
           normalize: input.normalize,
-          normalizedSegments: normalizedEditablePathSegments(segments, input.normalize),
+          normalizedSegments: normalizedQueryPathSegments(segments, input.normalize),
         }
       : {}),
   };
