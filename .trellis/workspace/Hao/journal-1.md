@@ -1692,3 +1692,36 @@ Added read-only S/s smooth cubic path query support. query_path_nodes, query_doc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: Smooth quadratic path query support
+
+**Date**: 2026-06-19
+**Task**: Smooth quadratic path query support
+**Branch**: `main`
+
+### Summary
+
+Added read-only T/t smooth quadratic path query and validation support, kept T/t non-editable, covered validation/query/document-summary/write-rejection tests, and recorded the contract in roadmap memory.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fae39f8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

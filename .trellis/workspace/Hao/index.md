@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 46
+- **Total Sessions**: 47
 - **Last Active**: 2026-06-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1686 | Active |
+| `journal-1.md` | ~1727 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 47 | 2026-06-19 | Smooth quadratic path query support | `fae39f8` | `main` |
 | 46 | 2026-06-19 | Smooth Cubic Path Query Support | `cd2acfb` | `main` |
 | 45 | 2026-06-19 | Arc Endpoint Editing | `69ec0f2` | `main` |
 | 44 | 2026-06-19 | Arc Path Query Support | `a787c8d` | `main` |
